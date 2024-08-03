@@ -36,8 +36,6 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
     private data class BindTargetKt(val funcCall: KSFunctionDeclaration) {
         val isCoroutine = funcCall.returnType?.resolve()?.let {
-            logger.warn(it.declaration.qualifiedName?.asString() ?: "decl_null")
-            logger.warn(CoroutineProvider.LuaCoroutineIntegration::class.qualifiedName ?: "lc_null")
             it.declaration.qualifiedName?.asString() == CoroutineProvider.LuaCoroutineIntegration::class.qualifiedName
         } ?: false
 
@@ -214,7 +212,6 @@ end
                                             val overloadFns =
                                                 functions.getOrPut(fnName) { BindTargetLua(fnName, mutableListOf()) }
                                             overloadFns.targets.add(BindTargetKt(fn))
-                                            logger.info(fnName)
                                             files.add(classDecl.containingFile!!)
                                         }
                                 }
