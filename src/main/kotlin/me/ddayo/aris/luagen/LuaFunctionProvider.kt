@@ -240,6 +240,7 @@ import party.iroiro.luajava.luajit.LuaJit
 object LuaGenerated {
     fun <T> push(lua: Lua, it: T) {
         when(it) {
+            null -> lua.pushNil()
             is Number -> lua.push(it)
             is Boolean -> lua.push(it)
             is String -> lua.push(it)
