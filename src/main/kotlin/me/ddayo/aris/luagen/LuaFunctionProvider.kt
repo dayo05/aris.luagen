@@ -101,12 +101,13 @@ if table_size >= $minimumRequiredParameters then
                 appendLine(
                     """
 local coroutine = ${fnName}(...) -- get LuaCoroutine instance
+local cur_task = get_current_task()
 while true do
     local it = coroutine:next_iter()
     if it:is_break() then
         return it:value()
     end
-    task:yield(function() return it:finished() end)
+    cur_task:yield(function() return it:finished() end)
 end
 """.trimIndent()
                 )
@@ -136,7 +137,7 @@ end
             StringBuilder().apply {
                 append(
                     """
-function ${name}(task, ...)
+function ${name}(...)
     local as_table = { ... }
     local table_size = #as_table
     local score = -1
