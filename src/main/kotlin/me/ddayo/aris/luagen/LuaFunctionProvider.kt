@@ -74,7 +74,8 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
         val ktCallString = StringBuilder().apply {
             appendLine("lua.push { lua ->")
-            appendLine("val arg = (0 until lua.top).map { lua.get() }.reversed()")
+            if(minimumRequiredParameters != 0)
+                appendLine("val arg = (0 until lua.top).map { lua.get() }.reversed()")
             if (parResolved.unitResolved.isAssignableFrom(funcCall.returnType!!.resolve())) {
                 appendLine("${funcCall.qualifiedName!!.asString()}($invStr)")
                     .appendLine("0")
