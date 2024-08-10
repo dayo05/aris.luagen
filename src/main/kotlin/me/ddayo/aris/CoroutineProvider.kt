@@ -1,5 +1,6 @@
 package me.ddayo.aris
 
+import me.ddayo.aris.luagen.LuaMultiReturn
 import kotlin.experimental.ExperimentalTypeInference
 
 interface CoroutineProvider {
@@ -13,6 +14,10 @@ interface CoroutineProvider {
 
     suspend fun <T> SequenceScope<CoroutineReturn<T>>.breakTask(value: T) {
         yield(CoroutineReturn.breakTask(value))
+    }
+
+    suspend fun SequenceScope<CoroutineReturn<LuaMultiReturn>>.breakTask(vararg value: Any) {
+        yield(CoroutineReturn.breakTask(LuaMultiReturn(*value)))
     }
 
     suspend fun <T> SequenceScope<CoroutineReturn<T>>.yieldUntil(until: () -> Boolean) {

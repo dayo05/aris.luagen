@@ -11,6 +11,7 @@ import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
 import me.ddayo.aris.CoroutineProvider
+import party.iroiro.luajava.value.LuaValue
 
 
 class LuaBindingException(message: String) : Exception(message)
@@ -35,9 +36,11 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
     )
 
     private data class BindTargetKt(val funcCall: KSFunctionDeclaration) {
-        val isCoroutine = funcCall.returnType?.resolve()?.let {
-            it.declaration.qualifiedName?.asString() == CoroutineProvider.LuaCoroutineIntegration::class.qualifiedName
-        } ?: false
+        private val returnResolved = funcCall.returnType?.resolve()
+        private val returnName = returnResolved?.declaration?.qualifiedName?.asString()
+        val isCoroutine = returnName == CoroutineProvider.LuaCoroutineIntegration::class.qualifiedName
+
+        val isMultiReturn = (if(isCoroutine) returnResolved?.arguments?.get(0)?.type?.resolve()?.declaration?.qualifiedName?.asString() else returnName) == LuaMultiReturn::class.qualifiedName
 
         val ptResolved = funcCall.parameters.map { it.type.resolve() }
         val minimumRequiredParameters =
@@ -100,13 +103,12 @@ if table_size >= $minimumRequiredParameters then
 
             if (isCoroutine)
                 appendLine(
-                    """
-local coroutine = ${fnName}(...) -- get LuaCoroutine instance
+                    """local coroutine = $fnName(...) -- get LuaCoroutine instance
 local cur_task = get_current_task()
 while true do
     local it = coroutine:next_iter()
     if it:is_break() then
-        return it:value()
+        return ${if(isMultiReturn) "resolve_mrt(it:value())" else "it:value()"}
     end
     cur_task:yield(function() return it:finished() end)
 end
@@ -114,7 +116,7 @@ end
                 )
             else appendLine(
                 """
-    return ${fnName}(...)
+    return ${if(isMultiReturn) "resolve_mrt($fnName(...))" else "$fnName(...)"}
 """.trimIndent()
             )
 
@@ -186,7 +188,7 @@ end
                     resolver.getClassDeclarationByName<Map<Any, Any>>()!!.asStarProjectedType(),
                     resolver.getClassDeclarationByName<Class<*>>()!!.asStarProjectedType(),
                     resolver.getClassDeclarationByName<Unit>()!!.asStarProjectedType(),
-                    resolver.getClassDeclarationByName("party.iroiro.luajava.value.LuaValue")!!.asStarProjectedType(),
+                    resolver.getClassDeclarationByName<LuaValue>()!!.asStarProjectedType(),
                     resolver.getClassDeclarationByName<CoroutineProvider.LuaCoroutineIntegration<*>>()!!
                         .asStarProjectedType(),
                 )
@@ -234,6 +236,7 @@ end
                             """
 package me.ddayo.aris.gen
 
+import me.ddayo.aris.luagen.LuaMultiReturn
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 import party.iroiro.luajava.luajit.LuaJit
@@ -252,6 +255,11 @@ object LuaGenerated {
     }
     
     fun initLua(lua: LuaJit) {
+        lua.push { lua ->
+            val r = lua.get().toJavaObject() as? LuaMultiReturn
+            r?.luaFn(lua) ?: 0
+        }
+        lua.setGlobal("resolve_mrt")
 """
                         )
                         write(functions.values.joinToString("\n") { fn -> fn.ktBind.toString() })
