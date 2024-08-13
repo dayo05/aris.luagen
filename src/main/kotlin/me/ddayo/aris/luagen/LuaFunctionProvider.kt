@@ -11,7 +11,6 @@ import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
 import me.ddayo.aris.CoroutineProvider
-import party.iroiro.luajava.value.LuaValue
 
 
 class LuaBindingException(message: String) : Exception(message)
@@ -188,7 +187,7 @@ end
                     resolver.getClassDeclarationByName<Map<Any, Any>>()!!.asStarProjectedType(),
                     resolver.getClassDeclarationByName<Class<*>>()!!.asStarProjectedType(),
                     resolver.getClassDeclarationByName<Unit>()!!.asStarProjectedType(),
-                    resolver.getClassDeclarationByName<LuaValue>()!!.asStarProjectedType(),
+                    resolver.getClassDeclarationByName("party.iroiro.luajava.value.LuaValue")!!.asStarProjectedType(),
                     resolver.getClassDeclarationByName<CoroutineProvider.LuaCoroutineIntegration<*>>()!!
                         .asStarProjectedType(),
                 )
@@ -226,55 +225,8 @@ end
 
             override fun finish() {
                 super.finish()
-                environment.codeGenerator.createNewFile(
-                    dependencies = Dependencies(true, *(files).toTypedArray()),
-                    packageName = "me.ddayo.aris.gen",
-                    fileName = "LuaGenerated"
-                ).writer()
-                    .apply {
-                        write(
-                            """
-package me.ddayo.aris.gen
 
-import me.ddayo.aris.luagen.LuaMultiReturn
-import party.iroiro.luajava.Lua
-import party.iroiro.luajava.LuaException
-import party.iroiro.luajava.luajit.LuaJit
-
-object LuaGenerated {
-    fun <T> push(lua: Lua, it: T) {
-        when(it) {
-            null -> lua.pushNil()
-            is Number -> lua.push(it)
-            is Boolean -> lua.push(it)
-            is String -> lua.push(it)
-            is Map<*, *> -> lua.push(it)
-            is Class<*> -> lua.pushJavaClass(it)
-            else -> lua.pushJavaObject(it as Any)
-        }
-    }
-    
-    fun initLua(lua: LuaJit) {
-        lua.push { lua ->
-            val r = lua.get().toJavaObject() as? LuaMultiReturn
-            r?.luaFn(lua) ?: 0
-        }
-        lua.setGlobal("resolve_mrt")
-"""
-                        )
-                        write(functions.values.joinToString("\n") { fn -> fn.ktBind.toString() })
-                        write(
-                            """
-    }
-}
-"""
-                        )
-
-                        close()
-                    }
-                environment.codeGenerator.createNewFileByPath(Dependencies(false), "main_gen", "lua")
-                    .writer().apply {
-                        write("""local _scheduler = {}
+                val luaCode = """local _scheduler = {}
 _scheduler.__index = _scheduler
 
 local function true_fn() return true end
@@ -328,10 +280,59 @@ function loop()
     end
 end
 
-""".trimIndent())
-                        write(functions.values.joinToString("\n") { fn -> fn.luaBind.toString() })
+""".trimIndent() + functions.values.joinToString("\n") { fn -> fn.luaBind.toString() }
+
+                val ktCode = StringBuilder().apply {
+                    appendLine("""package me.ddayo.aris.gen
+
+import me.ddayo.aris.luagen.LuaMultiReturn
+import party.iroiro.luajava.Lua
+import party.iroiro.luajava.LuaException
+import party.iroiro.luajava.luajit.LuaJit
+
+object LuaGenerated {
+    fun <T> push(lua: Lua, it: T) {
+        when(it) {
+            null -> lua.pushNil()
+            is Number -> lua.push(it)
+            is Boolean -> lua.push(it)
+            is String -> lua.push(it)
+            is Map<*, *> -> lua.push(it)
+            is Class<*> -> lua.pushJavaClass(it)
+            else -> lua.pushJavaObject(it as Any)
+        }
+    }
+    
+    fun initLua(lua: LuaJit) {
+        lua.push { lua ->
+            val r = lua.get().toJavaObject() as? LuaMultiReturn
+            r?.luaFn(lua) ?: 0
+        }
+        lua.setGlobal("resolve_mrt")
+""")
+                    appendLine(functions.values.joinToString("\n") { fn -> fn.ktBind.toString() })
+                    appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
+                    appendLine("""lua.pCall(0, 0)
+    }
+}
+""")
+                }.toString()
+
+                environment.codeGenerator.createNewFile(
+                    dependencies = Dependencies(true, *(files).toTypedArray()),
+                    packageName = "me.ddayo.aris.gen",
+                    fileName = "LuaGenerated"
+                ).writer()
+                    .apply {
+                        write(ktCode)
                         close()
                     }
+                if(environment.options["generate_lua"] == "true")
+                    environment.codeGenerator.createNewFileByPath(Dependencies(false), "main_gen", "lua")
+                        .writer().apply {
+                            write(luaCode)
+                            close()
+                        }
             }
         }
     }
