@@ -39,11 +39,16 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         private val returnName = returnResolved?.declaration?.qualifiedName?.asString()
         val isCoroutine = returnName == CoroutineProvider.LuaCoroutineIntegration::class.qualifiedName
 
-        val isMultiReturn = (if(isCoroutine) returnResolved?.arguments?.get(0)?.type?.resolve()?.declaration?.qualifiedName?.asString() else returnName) == LuaMultiReturn::class.qualifiedName
+        val isMultiReturn =
+            (if (isCoroutine) returnResolved?.arguments?.get(0)?.type?.resolve()?.declaration?.qualifiedName?.asString() else returnName) == LuaMultiReturn::class.qualifiedName
 
         val ptResolved = funcCall.parameters.map { it.type.resolve() }
         val minimumRequiredParameters =
             ptResolved.indexOfLast { !it.isMarkedNullable } + 1
+
+        val signature =
+            funcCall.parameters.joinToString(", ") { "${it.name?.asString()}: ${it.type.resolve().declaration.simpleName.asString()}" }
+        val doc = funcCall.docString
 
         val invStr = ptResolved.mapIndexed { ix, it ->
             StringBuilder()
@@ -76,7 +81,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
         val ktCallString = StringBuilder().apply {
             appendLine("lua.push { lua ->")
-            if(minimumRequiredParameters != 0)
+            if (minimumRequiredParameters != 0)
                 appendLine("val arg = (0 until lua.top).map { lua.get() }.reversed()")
             if (parResolved.unitResolved.isAssignableFrom(funcCall.returnType!!.resolve())) {
                 appendLine("${funcCall.qualifiedName!!.asString()}($invStr)")
@@ -107,7 +112,7 @@ local cur_task = get_current_task()
 while true do
     local it = coroutine:next_iter()
     if it:is_break() then
-        return ${if(isMultiReturn) "resolve_mrt(it:value())" else "it:value()"}
+        return ${if (isMultiReturn) "resolve_mrt(it:value())" else "it:value()"}
     end
     cur_task:yield(function() return it:finished() end)
 end
@@ -115,7 +120,7 @@ end
                 )
             else appendLine(
                 """
-    return ${if(isMultiReturn) "resolve_mrt($fnName(...))" else "$fnName(...)"}
+    return ${if (isMultiReturn) "resolve_mrt($fnName(...))" else "$fnName(...)"}
 """.trimIndent()
             )
 
@@ -129,8 +134,8 @@ end
         val ktBind by lazy {
             StringBuilder().apply {
                 targets.forEachIndexed { index, bindTargetKt ->
-                        append(bindTargetKt.ktCallString)
-                        appendLine("lua.setGlobal(\"${name}_kt${index}\")")
+                    append(bindTargetKt.ktCallString)
+                    appendLine("lua.setGlobal(\"${name}_kt${index}\")")
                 }
             }
         }
@@ -155,6 +160,20 @@ function ${name}(...)
 end
 """
                 )
+            }
+        }
+
+        val docString by lazy {
+            StringBuilder().apply {
+                targets.forEach {
+                    appendLine("## $name(${it.signature})")
+                    it.doc?.let { doc ->
+                        appendLine("```")
+                        append(' ')
+                        appendLine(doc.trim())
+                        appendLine("```")
+                    }
+                }
             }
         }
     }
@@ -283,7 +302,8 @@ end
 """.trimIndent() + functions.values.joinToString("\n") { fn -> fn.luaBind.toString() }
 
                 val ktCode = StringBuilder().apply {
-                    appendLine("""package me.ddayo.aris.gen
+                    appendLine(
+                        """package me.ddayo.aris.gen
 
 import me.ddayo.aris.luagen.LuaMultiReturn
 import party.iroiro.luajava.Lua
@@ -309,13 +329,16 @@ object LuaGenerated {
             r?.luaFn(lua) ?: 0
         }
         lua.setGlobal("resolve_mrt")
-""")
+"""
+                    )
                     appendLine(functions.values.joinToString("\n") { fn -> fn.ktBind.toString() })
                     appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
-                    appendLine("""lua.pCall(0, 0)
+                    appendLine(
+                        """lua.pCall(0, 0)
     }
 }
-""")
+"""
+                    )
                 }.toString()
 
                 environment.codeGenerator.createNewFile(
@@ -327,10 +350,16 @@ object LuaGenerated {
                         write(ktCode)
                         close()
                     }
-                if(environment.options["generate_lua"] == "true")
+                if (environment.options["export_lua"] == "true")
                     environment.codeGenerator.createNewFileByPath(Dependencies(false), "main_gen", "lua")
                         .writer().apply {
                             write(luaCode)
+                            close()
+                        }
+                if (environment.options["export_doc"] == "true")
+                    environment.codeGenerator.createNewFileByPath(Dependencies(false), "lua_doc", "md")
+                        .writer().apply {
+                            write(functions.values.joinToString("\n\n") { it.docString })
                             close()
                         }
             }
