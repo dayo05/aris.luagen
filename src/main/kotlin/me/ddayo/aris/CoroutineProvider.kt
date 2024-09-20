@@ -1,6 +1,10 @@
 package me.ddayo.aris
 
-import me.ddayo.aris.luagen.LuaMultiReturn
+import me.ddayo.aris.gen.CoroutineReturn_LuaGenerated.pushLua
+import me.ddayo.aris.gen.LuaCoroutineIntegration_LuaGenerated.pushLua
+import me.ddayo.aris.luagen.LuaFunction
+import me.ddayo.aris.luagen.LuaProvider
+import party.iroiro.luajava.Lua
 import kotlin.experimental.ExperimentalTypeInference
 
 interface CoroutineProvider {
@@ -24,33 +28,37 @@ interface CoroutineProvider {
         yield(CoroutineReturn.yield(until))
     }
 
-    class LuaCoroutineIntegration<T>(sequence: Sequence<CoroutineReturn<T>>) {
+    @LuaProvider
+    class LuaCoroutineIntegration<T>(sequence: Sequence<CoroutineReturn<T>>): ILuaStaticDecl {
         private val iter = sequence.iterator()
 
-        // following functions are called from lua(via reflection)
-        @JvmName(name = "next_iter")
+        @LuaFunction("next_iter")
         fun nextIter(): CoroutineReturn<T> {
             if(!iter.hasNext()) return CoroutineReturn.breakTask()
             return iter.next()
         }
+
+        override fun toLua(lua: Lua) = pushLua(lua)
     }
 
-    class CoroutineReturn<T>(val isBreak: Boolean) {
+    @LuaProvider
+    class CoroutineReturn<T>(val _isBreak: Boolean): ILuaStaticDecl {
         var returnValue: T? = null
         var until: (() -> Boolean)? = null
 
-        // following functions are called from lua(via reflection)
-        @JvmName(name = "finished")
+        @LuaFunction("finished")
         fun finished() = until?.invoke() == true
-        @JvmName(name = "value")
+        @LuaFunction("value")
         fun value() = returnValue
-        @JvmName(name = "is_break")
-        fun isBreak() = isBreak
+        @LuaFunction("is_break")
+        fun isBreak() = _isBreak
 
         companion object {
             fun <T> breakTask(value: T) = CoroutineReturn<T>(true).apply { returnValue = value }
             fun <T> breakTask() = CoroutineReturn<T>(true)
             fun <T> yield(until: () -> Boolean) = CoroutineReturn<T>(false).apply { this.until = until }
         }
+
+        override fun toLua(lua: Lua) = pushLua(lua)
     }
 }

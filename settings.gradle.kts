@@ -9,3 +9,4 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
+include("ap")
