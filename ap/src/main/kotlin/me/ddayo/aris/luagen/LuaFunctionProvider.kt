@@ -388,7 +388,7 @@ object $clName {
                         }) // write all static functions
                         appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
                         appendLine("lua.pCall(0, 0)")
-                        appendLine(functions.entries.joinToString("") { fn ->
+                        appendLine(cls.entries.joinToString("") { fn ->
                             if (fn.key == "null") return@joinToString ""
                             val cln = fn.key.replace('.', '_').replace("<", "").replace(">", "").replace(",", "")
                                 .replace(" ", "").replace("*", "")
