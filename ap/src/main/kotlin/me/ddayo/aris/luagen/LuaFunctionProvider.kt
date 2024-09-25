@@ -247,7 +247,7 @@ end
         logger = environment.logger
         return object : SymbolProcessor {
             val files = mutableSetOf<KSFile>()
-            val functions = mutableMapOf<String, MutableMap<String, BindTargetLua>>()
+            val functions = mutableMapOf<String, MutableMap<String, MutableMap<String, BindTargetLua>>>()
 
             override fun process(resolver: Resolver): List<KSAnnotated> {
                 parResolved = ParResolved(
@@ -273,8 +273,13 @@ end
                     environment.logger.warn(ret.joinToString { it.location.toString() })
                     environment.logger.warn(ret.count { it is KSClassDeclaration }.toString())
 
+                    val defCln = environment.options["default_class_name"] ?: "LuaGenerated"
                     providers.filter { it is KSClassDeclaration }
                         .forEach { classDecl ->
+                            val cln = classDecl.getAnnotationsByType(LuaProvider::class).firstOrNull()?.className.let {
+                                if(it == null || it == "!") defCln
+                                else it
+                            }
                             classDecl.accept(object : KSVisitorVoid() {
                                 override fun visitClassDeclaration(
                                     classDeclaration: KSClassDeclaration,
@@ -291,7 +296,8 @@ end
                                                     val fnName =
                                                         if (annot.name == "!") fn.simpleName.asString() else annot.name
                                                     val overloadFns =
-                                                        functions.getOrPut("null") { mutableMapOf() }.getOrPut(fnName) {
+                                                        functions.getOrPut(cln) { mutableMapOf() }
+                                                            .getOrPut("null") { mutableMapOf() }.getOrPut(fnName) {
                                                             BindTargetLua(
                                                                 fnName,
                                                                 mutableListOf(),
@@ -312,7 +318,7 @@ end
                                                 val fnName =
                                                     if (annot.name == "!") fn.simpleName.asString() else annot.name
                                                 val overloadFns =
-                                                    functions.getOrPut(intoProjectedStr(classDeclaration)) { mutableMapOf() }
+                                                    functions.getOrPut(cln) { mutableMapOf() }.getOrPut(intoProjectedStr(classDeclaration)) { mutableMapOf() }
                                                         .getOrPut(fnName) {
                                                             BindTargetLua(
                                                                 fnName,
@@ -343,50 +349,52 @@ end
             override fun finish() {
                 super.finish()
 
-                val luaCode =
-                    functions.values.joinToString("\n") { fn -> fn.values.joinToString("\n") { it.luaBind.toString() } }
-
                 val pkg = environment.options["package_name"] ?: "me.ddayo.aris.gen"
-                val className = environment.options["class_name"] ?: "LuaGenerated"
-                val ktCode = StringBuilder().apply {
-                    appendLine(
-                        """package $pkg
+
+                functions.entries.forEach { (clName, cls) ->
+                    val luaCode =
+                        cls.values.joinToString("\n") { fn -> fn.values.joinToString("\n") { it.luaBind.toString() } }
+
+                    val ktCode = StringBuilder().apply {
+                        appendLine(
+                            """package $pkg
 
 import me.ddayo.aris.LuaMultiReturn
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 import me.ddayo.aris.LuaMain.push
 
-object $className {
+object $clName {
     fun initLua(lua: Lua) {
 """
-                    )
-                    appendLine(functions.entries.joinToString("\n") { fn ->
-                        val sb = StringBuilder()
-                        if (fn.key != "null") {
-                            sb.appendLine("lua.newTable()")
-                        }
+                        )
+                        appendLine(cls.entries.joinToString("\n") { fn ->
+                            val sb = StringBuilder()
+                            if (fn.key != "null") {
+                                sb.appendLine("lua.newTable()")
+                            }
 
-                        sb.append(fn.value.values.joinToString("\n") { it.ktBind.toString() })
+                            sb.append(fn.value.values.joinToString("\n") { it.ktBind.toString() })
 
-                        if (fn.key != "null") {
+                            if (fn.key != "null") {
+                                sb.appendLine(
+                                    "lua.setGlobal(\"aris_${
+                                        fn.key.replace('.', '_').replace("<", "").replace(">", "").replace(",", "")
+                                            .replace(" ", "").replace("*", "")
+                                    }\")"
+                                )
+                            }
+                            sb.toString()
+                        }) // write all static functions
+                        appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
+                        appendLine("lua.pCall(0, 0)")
+                        appendLine(functions.entries.joinToString("") { fn ->
+                            if (fn.key == "null") return@joinToString ""
+                            val cln = fn.key.replace('.', '_').replace("<", "").replace(">", "").replace(",", "")
+                                .replace(" ", "").replace("*", "")
+                            val sb = StringBuilder()
                             sb.appendLine(
-                                "lua.setGlobal(\"aris_${
-                                    fn.key.replace('.', '_').replace("<", "").replace(">", "").replace(",", "")
-                                        .replace(" ", "").replace("*", "")
-                                }\")"
-                            )
-                        }
-                        sb.toString()
-                    }) // write all static functions
-                    appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
-                    appendLine("lua.pCall(0, 0)")
-                    appendLine(functions.entries.joinToString("") { fn ->
-                        if(fn.key == "null") return@joinToString ""
-                        val cln = fn.key.replace('.', '_').replace("<", "").replace(">", "").replace(",", "")
-                            .replace(" ", "").replace("*", "")
-                        val sb = StringBuilder()
-                        sb.appendLine("""
+                                """
                                 lua.newTable()
                                 lua.getGlobal("aris__gc")
                                 lua.setField(-2, "__gc")
@@ -394,61 +402,71 @@ object $className {
                                 lua.setField(-2, "__newindex")
                                 lua.getGlobal("aris__eq")
                                 lua.setField(-2, "__eq")
-                                lua.newTable()""")
-                                fn.value.forEach {
-                                    sb.appendLine("""
+                                lua.newTable()"""
+                            )
+                            fn.value.forEach {
+                                sb.appendLine(
+                                    """
                                     lua.getGlobal("aris_${cln}_${it.key}")
                                     lua.setField(-2, "${it.key}")
-                                    """)
-                                }
-                                sb.appendLine("""
+                                    """
+                                )
+                            }
+                            sb.appendLine(
+                                """
                                 lua.setField(-2, "__index")
                                 lua.setGlobal("aris_${cln}_mt")
                                     
-                                """)
-                        sb.toString()
-                    })
-                    appendLine("""
+                                """
+                            )
+                            sb.toString()
+                        })
+                        appendLine("""
     }
 }
-""" + functions.entries.joinToString("\n") { (k, v) ->
+""" + cls.entries.joinToString("\n") { (k, v) ->
                             if (k == "null") return@joinToString ""
                             StringBuilder().apply {
                                 appendLine("object ${v.values.first().declaredClass?.simpleName?.asString()}_LuaGenerated {")
                                 appendLine("    fun $k.pushLua(lua: Lua) {")
                                 appendLine("        lua.pushJavaObject(this)")
-                                appendLine("        lua.getGlobal(\"aris_${v.values.first().declaredClass?.qualifiedName?.asString()?.replace(".", "_")}_mt\")")
+                                appendLine(
+                                    "        lua.getGlobal(\"aris_${
+                                        v.values.first().declaredClass?.qualifiedName?.asString()?.replace(".", "_")
+                                    }_mt\")"
+                                )
                                 appendLine("        lua.setMetatable(-2)")
                                 appendLine("    }")
                                 appendLine("}")
                             }.toString()
                         }
-                    )
-                }.toString()
+                        )
+                    }.toString()
 
-                environment.codeGenerator.createNewFile(
-                    dependencies = Dependencies(true, *(files).toTypedArray()),
-                    packageName = pkg,
-                    fileName = className
-                ).writer()
-                    .apply {
-                        write(ktCode)
-                        close()
-                    }
-                if (environment.options["export_lua"] == "true")
-                    environment.codeGenerator.createNewFileByPath(Dependencies(false), "main_gen", "lua")
-                        .writer().apply {
-                            write(luaCode)
+                    environment.codeGenerator.createNewFile(
+                        dependencies = Dependencies(true, *(files).toTypedArray()),
+                        packageName = pkg,
+                        fileName = clName
+                    ).writer()
+                        .apply {
+                            write(ktCode)
                             close()
                         }
-                if (environment.options["export_doc"] == "true")
-                    environment.codeGenerator.createNewFileByPath(Dependencies(false), "lua_doc", "md")
-                        .writer().apply {
-                            write(functions.values.joinToString("\n\n") {
-                                it.values.map { it.docString }.filter { it.isNotBlank() }.joinToString("\n\n")
-                            })
-                            close()
-                        }
+                    if (environment.options["export_lua"] == "true")
+                        environment.codeGenerator.createNewFileByPath(Dependencies(false), "main_gen_$clName", "lua")
+                            .writer().apply {
+                                write(luaCode)
+                                close()
+                            }
+                    if (environment.options["export_doc"] == "true")
+                        environment.codeGenerator.createNewFileByPath(Dependencies(false), "lua_doc_$clName", "md")
+                            .writer().apply {
+                                write(cls.values.joinToString("\n\n") {
+                                    it.values.map { it.docString }.filter { it.isNotBlank() }.joinToString("\n\n")
+                                })
+                                close()
+                            }
+                }
             }
         }
     }

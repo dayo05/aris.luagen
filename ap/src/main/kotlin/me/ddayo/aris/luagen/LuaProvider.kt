@@ -1,3 +1,3 @@
 package me.ddayo.aris.luagen
 
-annotation class LuaProvider
+annotation class LuaProvider(val className: String = "!")
