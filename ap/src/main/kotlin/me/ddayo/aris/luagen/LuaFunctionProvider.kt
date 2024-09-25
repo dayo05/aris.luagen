@@ -88,8 +88,19 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                 appendLine("val arg = (0 until lua.top).map { lua.get() }.reversed()")
 
             if (parResolved.unitResolved.isAssignableFrom(funcCall.returnType!!.resolve())) {
-                appendLine("${funcCall.qualifiedName!!.asString()}($invStr)")
-                    .appendLine("0")
+                if(declaredClass == null)
+                    appendLine("${funcCall.qualifiedName!!.asString()}($invStr)")
+                        .appendLine("0")
+                else {
+                    appendLine("lua.push(arg[0])")
+                    appendLine("lua.getMetatable(-1)")
+                    appendLine("lua.getGlobal(\"aris__obj_mt\")")
+                    appendLine("lua.setMetatable(-3)")
+
+                    appendLine("val rt = listOf((arg[0].toJavaObject() as ${intoProjectedStr(declaredClass)}).${funcCall.simpleName.asString()}($invStr))")
+                    appendLine("lua.setMetatable(-2)")
+                    appendLine("0")
+                }
             } else {
                 if (declaredClass == null)
                     appendLine("val rt = listOf(${funcCall.qualifiedName!!.asString()}($invStr))")
@@ -123,13 +134,12 @@ if table_size >= $minimumRequiredParameters then
             if (isCoroutine)
                 appendLine(
                     """local coroutine = $fnName(...) -- get LuaCoroutine instance
-local cur_task = get_current_task()
 while true do
     local it = coroutine:next_iter()
     if it:is_break() then
         return ${if (isMultiReturn) "resolve_mrt(it:value())" else "it:value()"}
     end
-    cur_task:yield(function() return it:finished() end)
+    task_yield(function() return it:finished() end)
 end
 """.trimIndent()
                 )
@@ -321,7 +331,7 @@ end
                                             }
                                         }
 
-                                        else -> throw LuaBindingException("Cannot process ${classDeclaration.qualifiedName}: Provider must be singletone object")
+                                        else -> throw LuaBindingException("Cannot process ${classDeclaration.qualifiedName}: Provider not supports object")
                                     }
                                 }
                             }, Unit)
