@@ -453,13 +453,13 @@ object $clName {
                             close()
                         }
                     if (environment.options["export_lua"] == "true")
-                        environment.codeGenerator.createNewFileByPath(Dependencies(false), "main_gen_$clName", "lua")
+                        environment.codeGenerator.createNewFileByPath(Dependencies(false), clName, "lua")
                             .writer().apply {
                                 write(luaCode)
                                 close()
                             }
                     if (environment.options["export_doc"] == "true")
-                        environment.codeGenerator.createNewFileByPath(Dependencies(false), "lua_doc_$clName", "md")
+                        environment.codeGenerator.createNewFileByPath(Dependencies(false), "${clName}_doc", "md")
                             .writer().apply {
                                 write(cls.values.joinToString("\n\n") {
                                     it.values.map { it.docString }.filter { it.isNotBlank() }.joinToString("\n\n")
