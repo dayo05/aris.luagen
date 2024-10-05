@@ -56,7 +56,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         val invStr = ptResolved.mapIndexed { ix, it ->
             StringBuilder()
                 .append("arg[")
-                .append(ix)
+                .append(if(declaredClass == null) ix else (ix + 1))
                 .append(']').apply {
                     if (parResolved.stringResolved.isAssignableFrom(it))
                         append(".toString()")
