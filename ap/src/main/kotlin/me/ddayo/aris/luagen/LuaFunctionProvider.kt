@@ -30,7 +30,8 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         val classResolved: KSType,
         val unitResolved: KSType,
         val luaValueResolved: KSType,
-        val coroutineResolved: KSType
+        val coroutineResolved: KSType,
+        val staticDeclResolved: KSType
     )
 
     private data class BindTargetKt(
@@ -56,7 +57,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         val invStr = ptResolved.mapIndexed { ix, it ->
             StringBuilder()
                 .append("arg[")
-                .append(if(declaredClass == null) ix else (ix + 1))
+                .append(if (declaredClass == null) ix else (ix + 1))
                 .append(']').apply {
                     if (parResolved.stringResolved.isAssignableFrom(it))
                         append(".toString()")
@@ -83,34 +84,68 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
         val ktCallString = StringBuilder().apply {
             appendLine("lua.push { lua ->")
-            if (declaredClass != null || minimumRequiredParameters != 0)
+
+            var needResolve = 0
+            if (declaredClass != null || minimumRequiredParameters != 0) {
                 appendLine("val arg = (0 until lua.top).map { lua.get() }.reversed()")
+                if (declaredClass != null || ptResolved.any { parResolved.staticDeclResolved.isAssignableFrom(it) }) {
+                    appendLine("lua.getGlobal(\"aris__obj_mt\")")
+                    val ll = mutableListOf<Int>()
+                    ptResolved.forEachIndexed { index, ksType ->
+                        if (parResolved.staticDeclResolved.isAssignableFrom(ksType)) ll.add(
+                            if (declaredClass == null) index else (index + 1)
+                        )
+                    }
+                    if (declaredClass != null && parResolved.staticDeclResolved.isAssignableFrom(
+                            declaredClass.asStarProjectedType()
+                        )
+                    )
+                        ll.add(0)
+                    needResolve = ll.size
+
+                    ll.forEachIndexed { index, v ->
+                        appendLine("lua.push(arg[$v])")
+                        appendLine("lua.getMetatable(-1)")
+                        appendLine("lua.pushValue(-${index * 2 + 3})")
+                        appendLine("lua.setMetatable(-3)")
+                    }
+                }
+            }
 
             if (parResolved.unitResolved.isAssignableFrom(funcCall.returnType!!.resolve())) {
-                if(declaredClass == null)
+                if (declaredClass == null) {
                     appendLine("${funcCall.qualifiedName!!.asString()}($invStr)")
-                        .appendLine("0")
-                else {
-                    appendLine("lua.push(arg[0])")
-                    appendLine("lua.getMetatable(-1)")
-                    appendLine("lua.getGlobal(\"aris__obj_mt\")")
-                    appendLine("lua.setMetatable(-3)")
-
+                    if (needResolve != 0) {
+                        repeat(needResolve) {
+                            appendLine("lua.setMetatable(-2)")
+                            appendLine("lua.pop(1)")
+                        }
+                        appendLine("lua.pop(1)")
+                    }
+                    appendLine("0")
+                } else {
                     appendLine("val rt = listOf((arg[0].toJavaObject() as ${intoProjectedStr(declaredClass)}).${funcCall.simpleName.asString()}($invStr))")
-                    appendLine("lua.setMetatable(-2)")
+
+                    if (needResolve != 0) {
+                        repeat(needResolve) {
+                            appendLine("lua.setMetatable(-2)")
+                            appendLine("lua.pop(1)")
+                        }
+                        appendLine("lua.pop(1)")
+                    }
                     appendLine("0")
                 }
             } else {
                 if (declaredClass == null)
                     appendLine("val rt = listOf(${funcCall.qualifiedName!!.asString()}($invStr))")
-                else {
-                    appendLine("lua.push(arg[0])")
-                    appendLine("lua.getMetatable(-1)")
-                    appendLine("lua.getGlobal(\"aris__obj_mt\")")
-                    appendLine("lua.setMetatable(-3)")
-
+                else
                     appendLine("val rt = listOf((arg[0].toJavaObject() as ${intoProjectedStr(declaredClass)}).${funcCall.simpleName.asString()}($invStr))")
-                    appendLine("lua.setMetatable(-2)")
+                if (needResolve != 0) {
+                    repeat(needResolve) {
+                        appendLine("lua.setMetatable(-2)")
+                        appendLine("lua.pop(1)")
+                    }
+                    appendLine("lua.pop(1)")
                 }
                 appendLine("rt.forEach { push(lua, it) }")
                 appendLine("rt.size")
@@ -266,6 +301,7 @@ end
                     resolver.getClassDeclarationByName("party.iroiro.luajava.value.LuaValue")!!.asStarProjectedType(),
                     resolver.getClassDeclarationByName("me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration")!!
                         .asStarProjectedType(),
+                    resolver.getClassDeclarationByName("me.ddayo.aris.ILuaStaticDecl")!!.asStarProjectedType(),
                 )
                 resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).let { providers ->
                     val ret = providers.filter { !it.validate() }
@@ -276,7 +312,7 @@ end
                     providers.filter { it is KSClassDeclaration }
                         .forEach { classDecl ->
                             val cln = classDecl.getAnnotationsByType(LuaProvider::class).firstOrNull()?.className.let {
-                                if(it == null || it == "!") defCln
+                                if (it == null || it == "!") defCln
                                 else it
                             }
                             classDecl.accept(object : KSVisitorVoid() {
@@ -297,12 +333,12 @@ end
                                                     val overloadFns =
                                                         functions.getOrPut(cln) { mutableMapOf() }
                                                             .getOrPut("null") { mutableMapOf() }.getOrPut(fnName) {
-                                                            BindTargetLua(
-                                                                fnName,
-                                                                mutableListOf(),
-                                                                null
-                                                            )
-                                                        }
+                                                                BindTargetLua(
+                                                                    fnName,
+                                                                    mutableListOf(),
+                                                                    null
+                                                                )
+                                                            }
                                                     overloadFns.targets.add(BindTargetKt(fn, null, !annot.exportDoc))
                                                     files.add(classDecl.containingFile!!)
                                                 }
@@ -317,7 +353,8 @@ end
                                                 val fnName =
                                                     if (annot.name == "!") fn.simpleName.asString() else annot.name
                                                 val overloadFns =
-                                                    functions.getOrPut(cln) { mutableMapOf() }.getOrPut(intoProjectedStr(classDeclaration)) { mutableMapOf() }
+                                                    functions.getOrPut(cln) { mutableMapOf() }
+                                                        .getOrPut(intoProjectedStr(classDeclaration)) { mutableMapOf() }
                                                         .getOrPut(fnName) {
                                                             BindTargetLua(
                                                                 fnName,
