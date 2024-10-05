@@ -72,10 +72,9 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                                 else -> throw Exception("Not supported type")
                             }
                         )
-                    else if (parResolved.booleanResolved.isAssignableFrom(it))
-                        append(".toJavaObject() as Boolean")
+                    // else if (parResolved.booleanResolved.isAssignableFrom(it)) append(".toJavaObject() as Boolean")
                     else if (!parResolved.luaValueResolved.isAssignableFrom(it))
-                        append(".toJavaObject()")
+                        append(".toJavaObject() as ${it.declaration.qualifiedName?.asString()}")
 
                     toString()
                 }
