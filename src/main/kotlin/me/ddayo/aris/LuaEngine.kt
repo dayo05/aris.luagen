@@ -17,10 +17,12 @@ open class LuaEngine {
     }
 
     fun loop() {
+        val toRemove = mutableListOf<LuaTask>()
         for(task in tasks) {
             task.loop()
-            if(!task.running) tasks.remove(task)
+            if(!task.running) toRemove.add(task)
         }
+        tasks.removeAll(toRemove)
     }
 
     class LuaTask(val engine: LuaEngine, code: String, val name: String, val repeat: Boolean = false) {
