@@ -10,6 +10,7 @@ dependencies {
     api(project(":ap"))
     ksp(project(":ap"))
     testImplementation(kotlin("test"))
+    testRuntimeOnly("party.iroiro.luajava:luajit-platform:4.0.2:natives-desktop")
 }
 
 tasks.test {
