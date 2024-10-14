@@ -25,7 +25,7 @@ open class LuaEngine {
         tasks.removeAll(toRemove)
     }
 
-    class LuaTask(val engine: LuaEngine, code: String, val name: String, val repeat: Boolean = false) {
+    inner class LuaTask(code: String, val name: String, val repeat: Boolean = false) {
         var running = false
             private set
         private lateinit var coroutine: AbstractLua
@@ -33,17 +33,17 @@ open class LuaEngine {
         private var yieldRule: LuaValue? = null
 
         init {
-            engine.lua.load("""return function(task)
+            lua.load("""return function(task)
                 |    $code
                 |end""".trimMargin())
-            engine.lua.pCall(0, 1)
-            refIdx = engine.lua.ref()
+            lua.pCall(0, 1)
+            refIdx = lua.ref()
 
             init()
         }
 
         private fun init() {
-            coroutine = engine.lua.newThread()
+            coroutine = lua.newThread()
             coroutine.refGet(refIdx) // code
         }
 
@@ -69,7 +69,7 @@ open class LuaEngine {
 
         // unref code on Java object has been collected by GC
         fun finalize() {
-            engine.lua.unref(refIdx)
+            lua.unref(refIdx)
         }
     }
 }

@@ -46,13 +46,16 @@ class TestEngine: LuaEngine() {
 fun main() {
     val engine = TestEngine()
     engine.addTask(
-        LuaEngine.LuaTask(engine, """
+        engine.LuaTask(
+            """
         local t = create_test2()
         t:f2()
         t:f1()
         local t2 = create_test1()
         t2:f1()
         t2:f2() -- must failed
-    """.trimIndent(), "name"))
+    """.trimIndent(), "name"
+        )
+    )
     engine.loop()
 }
