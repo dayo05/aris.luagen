@@ -2,14 +2,9 @@
 
 package me.ddayo.aris.luagen
 
-import com.google.devtools.ksp.KspExperimental
-import com.google.devtools.ksp.containingFile
-import com.google.devtools.ksp.getAnnotationsByType
-import com.google.devtools.ksp.getClassDeclarationByName
-import com.google.devtools.ksp.getDeclaredFunctions
+import com.google.devtools.ksp.*
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
-import com.google.devtools.ksp.validate
 
 
 class LuaBindingException(message: String) : Exception(message)
@@ -282,6 +277,7 @@ end
         return object : SymbolProcessor {
             val files = mutableSetOf<KSFile>()
             val functions = mutableMapOf<String, MutableMap<String, MutableMap<String, BindTargetLua>>>()
+            val inherit = mutableMapOf<String, String>()
 
             override fun process(resolver: Resolver): List<KSAnnotated> {
                 parResolved = ParResolved(
@@ -303,83 +299,107 @@ end
                         .asStarProjectedType(),
                     resolver.getClassDeclarationByName("me.ddayo.aris.ILuaStaticDecl")!!.asStarProjectedType(),
                 )
+                val defCln = environment.options["default_class_name"] ?: "LuaGenerated"
+
+                val byProvider = mutableMapOf<String, MutableList<KSClassDeclaration>>()
+                val ret: Sequence<KSAnnotated>
                 resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).let { providers ->
-                    val ret = providers.filter { !it.validate() }
-                    environment.logger.warn(ret.joinToString { it.location.toString() })
-                    environment.logger.warn(ret.count { it is KSClassDeclaration }.toString())
+                    ret = providers.filter { !it.validate() }
+                    environment.logger.warn("it.validate failed on " + ret.joinToString { it.location.toString() })
 
-                    val defCln = environment.options["default_class_name"] ?: "LuaGenerated"
-                    providers.filter { it is KSClassDeclaration }
-                        .forEach { classDecl ->
-                            val cln = classDecl.getAnnotationsByType(LuaProvider::class).firstOrNull()?.className.let {
-                                if (it == null || it == "!") defCln
-                                else it
-                            }
-                            classDecl.accept(object : KSVisitorVoid() {
-                                override fun visitClassDeclaration(
-                                    classDeclaration: KSClassDeclaration,
-                                    data: Unit
-                                ) {
-                                    when (classDeclaration.classKind) {
-                                        ClassKind.OBJECT -> {
-                                            classDeclaration.getDeclaredFunctions().mapNotNull {
-                                                it.getAnnotationsByType(
-                                                    LuaFunction::class
-                                                ).firstOrNull()?.let { annot -> it to annot }
-                                            }
-                                                .forEach { (fn, annot) ->
-                                                    val fnName =
-                                                        if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                                    val overloadFns =
-                                                        functions.getOrPut(cln) { mutableMapOf() }
-                                                            .getOrPut("null") { mutableMapOf() }.getOrPut(fnName) {
-                                                                BindTargetLua(
-                                                                    fnName,
-                                                                    mutableListOf(),
-                                                                    null
-                                                                )
-                                                            }
-                                                    overloadFns.targets.add(BindTargetKt(fn, null, !annot.exportDoc))
-                                                    files.add(classDecl.containingFile!!)
-                                                }
-                                        }
+                    providers.mapNotNull { it as? KSClassDeclaration }
+                        .forEach { classDeclaration ->
+                            val cln =
+                                classDeclaration.getAnnotationsByType(LuaProvider::class).firstOrNull()?.className.let {
+                                    if (it == null || it == "!") defCln
+                                    else it
+                                }
+                            byProvider.getOrPut(cln) { mutableListOf() }.add(classDeclaration)
+                        }
+                }
 
-                                        ClassKind.CLASS -> {
-                                            classDeclaration.getDeclaredFunctions().mapNotNull {
-                                                it.getAnnotationsByType(
-                                                    LuaFunction::class
-                                                ).firstOrNull()?.let { annot -> it to annot }
-                                            }.forEach { (fn, annot) ->
-                                                val fnName =
-                                                    if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                                val overloadFns =
-                                                    functions.getOrPut(cln) { mutableMapOf() }
-                                                        .getOrPut(intoProjectedStr(classDeclaration)) { mutableMapOf() }
-                                                        .getOrPut(fnName) {
-                                                            BindTargetLua(
-                                                                fnName,
-                                                                mutableListOf(),
-                                                                classDeclaration
-                                                            )
-                                                        }
-                                                overloadFns.targets.add(
-                                                    BindTargetKt(
-                                                        fn,
-                                                        classDeclaration,
-                                                        !annot.exportDoc
+                byProvider.forEach { (provider, classes) ->
+                    functions[provider] = mutableMapOf()
+                    val fns = functions[provider]!!
+                    val sorter = Sorter()
+                    classes.forEach { classDeclaration ->
+                        sorter.addInstance(classDeclaration.qualifiedName!!.asString(), sorter.SorterInstance {
+                            environment.logger.warn("Processing ${classDeclaration.simpleName.asString()}")
+                            when (classDeclaration.classKind) {
+                                ClassKind.OBJECT -> {
+                                    classDeclaration.getDeclaredFunctions().mapNotNull {
+                                        it.getAnnotationsByType(
+                                            LuaFunction::class
+                                        ).firstOrNull()?.let { annot -> it to annot }
+                                    }
+                                        .forEach { (fn, annot) ->
+                                            val fnName =
+                                                if (annot.name == "!") fn.simpleName.asString() else annot.name
+                                            val overloadFns =
+                                                fns.getOrPut("null") { mutableMapOf() }.getOrPut(fnName) {
+                                                    BindTargetLua(
+                                                        fnName,
+                                                        mutableListOf(),
+                                                        null
                                                     )
-                                                )
-                                                files.add(classDecl.containingFile!!)
-                                            }
+                                                }
+                                            overloadFns.targets.add(BindTargetKt(fn, null, !annot.exportDoc))
+                                            files.add(classDeclaration.containingFile!!)
                                         }
+                                }
 
-                                        else -> throw LuaBindingException("Cannot process ${classDeclaration.qualifiedName}: Provider not supports object")
+                                ClassKind.CLASS -> {
+                                    classDeclaration.getDeclaredFunctions().mapNotNull {
+                                        it.getAnnotationsByType(
+                                            LuaFunction::class
+                                        ).firstOrNull()?.let { annot -> it to annot }
+                                    }.forEach { (fn, annot) ->
+                                        val fnName =
+                                            if (annot.name == "!") fn.simpleName.asString() else annot.name
+                                        val overloadFns =
+                                            fns.getOrPut(intoProjectedStr(classDeclaration)) { mutableMapOf() }
+                                                .getOrPut(fnName) {
+                                                    BindTargetLua(
+                                                        fnName,
+                                                        mutableListOf(),
+                                                        classDeclaration
+                                                    )
+                                                }
+                                        overloadFns.targets.add(
+                                            BindTargetKt(
+                                                fn,
+                                                classDeclaration,
+                                                !annot.exportDoc
+                                            )
+                                        )
+                                        files.add(classDeclaration.containingFile!!)
                                     }
                                 }
-                            }, Unit)
-                        }
-                    return ret.toList()
+
+                                else -> throw LuaBindingException("Cannot process ${classDeclaration.qualifiedName}: Provider not supports object")
+                            }
+                        })
+                    }
+
+                    classes.forEach { current ->
+                        current.superTypes.map { it.resolve().declaration }.filterIsInstance<KSClassDeclaration>()
+                            .forEach { parent ->
+                                environment.logger.warn("${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
+                                if (parent.isAnnotationPresent(LuaProvider::class)) {
+                                    inherit[current.qualifiedName!!.asString().replace(".", "_")] = parent.qualifiedName!!.asString()
+                                    if (sorter[parent.qualifiedName!!.asString()] != null)
+                                        sorter.setParent(
+                                            parent.qualifiedName!!.asString(),
+                                            current.qualifiedName!!.asString()
+                                        )
+                                }
+                            }
+                    }
+
+                    sorter.process()
                 }
+
+                return ret.toList()
             }
 
             override fun finish() {
@@ -448,13 +468,20 @@ object $clName {
                                     """
                                 )
                             }
-                            sb.appendLine(
-                                """
-                                lua.setField(-2, "__index")
-                                lua.setGlobal("aris_${cln}_mt")
-                                    
-                                """
-                            )
+
+                            inherit[cln]?.let {
+                                sb.appendLine("""
+                                lua.newTable()
+                                lua.getGlobal("aris_${it.replace(".", "_")}_mt")
+                                lua.getField(-1, "__index")
+                                lua.setField(-3, "__index")
+                                lua.pop(1)
+                                lua.setMetatable(-2)
+                                """.trimIndent())
+                            }
+
+                            sb.appendLine("lua.setField(-2, \"__index\")")
+                            sb.appendLine("lua.setGlobal(\"aris_${cln}_mt\")")
                             sb.toString()
                         })
                         appendLine("""
