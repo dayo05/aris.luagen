@@ -49,12 +49,6 @@ object LuaMain {
     }
 
     internal fun initLua(lua: Lua) {
-        lua.push { lua ->
-            val r = lua.get().toJavaObject() as? LuaMultiReturn
-            r?.luaFn(lua) ?: 0
-        }
-        lua.setGlobal("resolve_mrt")
-
         run {
             lua.pushJavaObject(Any())
             lua.getMetatable(-1)
