@@ -29,7 +29,22 @@ object LuaMain {
             lua.getMetatable(-1)
             lua.setGlobal("aris__obj_mt")
 
+            // TODO
             if(lua.getMetaField(-1, "__gc") == 0) throw NoSuchElementException("Cannot retrieve __gc metafield")
+            lua.setGlobal("aris__gc_internal")
+            lua.push { lua ->
+                // lua.pushTable(...)
+                lua.getGlobal("aris__obj_mt")
+                lua.setMetatable(-2)
+                lua.getGlobal("aris__obj_mt")
+                lua.getField(-2, "__gc")
+                lua.pushValue(1)
+                println("Before GC Called")
+                lua.pCall(1, 0) // not working yet...
+                println("After GC Called")
+                lua.pop(1)
+                0
+            }
             lua.setGlobal("aris__gc")
             if(lua.getMetaField(-1, "__newindex") == 0) throw NoSuchElementException("Cannot retrieve __newindex metafield")
             lua.setGlobal("aris__newindex")
