@@ -38,9 +38,6 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         private val returnName = returnResolved?.declaration?.qualifiedName?.asString()
         val isCoroutine = returnName == "me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration"
 
-        val isMultiReturn =
-            (if (isCoroutine) returnResolved?.arguments?.get(0)?.type?.resolve()?.declaration?.qualifiedName?.asString() else returnName) == "me.ddayo.aris.LuaMultiReturn"
-
         val ptResolved = funcCall.parameters.map { it.type.resolve() }
         val minimumRequiredParameters =
             ptResolved.indexOfLast { !it.isMarkedNullable } + 1
@@ -107,44 +104,18 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                 }
             }
 
-            if (parResolved.unitResolved.isAssignableFrom(funcCall.returnType!!.resolve())) {
-                if (declaredClass == null) {
-                    appendLine("${funcCall.qualifiedName!!.asString()}($invStr)")
-                    if (needResolve != 0) {
-                        repeat(needResolve) {
-                            appendLine("lua.setMetatable(-2)")
-                            appendLine("lua.pop(1)")
-                        }
-                        appendLine("lua.pop(1)")
-                    }
-                    appendLine("0")
-                } else {
-                    appendLine("val rt = listOf((arg[0].toJavaObject() as ${intoProjectedStr(declaredClass)}).${funcCall.simpleName.asString()}($invStr))")
-
-                    if (needResolve != 0) {
-                        repeat(needResolve) {
-                            appendLine("lua.setMetatable(-2)")
-                            appendLine("lua.pop(1)")
-                        }
-                        appendLine("lua.pop(1)")
-                    }
-                    appendLine("0")
-                }
-            } else {
-                if (declaredClass == null)
-                    appendLine("val rt = listOf(${funcCall.qualifiedName!!.asString()}($invStr))")
-                else
-                    appendLine("val rt = listOf((arg[0].toJavaObject() as ${intoProjectedStr(declaredClass)}).${funcCall.simpleName.asString()}($invStr))")
-                if (needResolve != 0) {
-                    repeat(needResolve) {
-                        appendLine("lua.setMetatable(-2)")
-                        appendLine("lua.pop(1)")
-                    }
+            if (declaredClass == null)
+                appendLine("val rt = ${funcCall.qualifiedName!!.asString()}($invStr)")
+            else
+                appendLine("val rt = (arg[0].toJavaObject() as ${intoProjectedStr(declaredClass)}).${funcCall.simpleName.asString()}($invStr)")
+            if (needResolve != 0) {
+                repeat(needResolve) {
+                    appendLine("lua.setMetatable(-2)")
                     appendLine("lua.pop(1)")
                 }
-                appendLine("rt.forEach { push(lua, it) }")
-                appendLine("rt.size")
+                appendLine("lua.pop(1)")
             }
+            appendLine("return@push push(lua, rt)")
             appendLine("}")
         }
 
@@ -166,7 +137,7 @@ if table_size >= $minimumRequiredParameters then
 while true do
     local it = coroutine:next_iter()
     if it:is_break() then
-        return ${if (isMultiReturn) "resolve_mrt(it:value())" else "it:value()"}
+        return it:value()
     end
     task_yield(function() return it:finished() end)
 end
@@ -174,7 +145,7 @@ end
                 )
             else appendLine(
                 """
-    return ${if (isMultiReturn) "resolve_mrt($fnName(...))" else "$fnName(...)"}
+    return $fnName(...)
 """.trimIndent()
             )
 
@@ -386,7 +357,8 @@ end
                             .forEach { parent ->
                                 environment.logger.warn("${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
                                 if (parent.isAnnotationPresent(LuaProvider::class)) {
-                                    inherit[current.qualifiedName!!.asString().replace(".", "_")] = parent.qualifiedName!!.asString()
+                                    inherit[current.qualifiedName!!.asString().replace(".", "_")] =
+                                        parent.qualifiedName!!.asString()
                                     if (sorter[parent.qualifiedName!!.asString()] != null)
                                         sorter.setParent(
                                             parent.qualifiedName!!.asString(),
@@ -470,14 +442,16 @@ object $clName {
                             }
 
                             inherit[cln]?.let {
-                                sb.appendLine("""
+                                sb.appendLine(
+                                    """
                                 lua.newTable()
                                 lua.getGlobal("aris_${it.replace(".", "_")}_mt")
                                 lua.getField(-1, "__index")
                                 lua.setField(-3, "__index")
                                 lua.pop(1)
                                 lua.setMetatable(-2)
-                                """.trimIndent())
+                                """.trimIndent()
+                                )
                             }
 
                             sb.appendLine("lua.setField(-2, \"__index\")")

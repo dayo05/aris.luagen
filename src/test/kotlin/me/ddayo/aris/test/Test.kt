@@ -2,6 +2,7 @@ package me.ddayo.aris.test
 
 import me.ddayo.aris.ILuaStaticDecl
 import me.ddayo.aris.LuaEngine
+import me.ddayo.aris.LuaMultiReturn
 import me.ddayo.aris.gen.Test1_LuaGenerated.pushLua
 import me.ddayo.aris.gen.Test2_LuaGenerated.pushLua
 import me.ddayo.aris.gen.TestGenerated
@@ -16,6 +17,9 @@ open class Test1: ILuaStaticDecl {
         println("F1 called")
     }
 
+    @LuaFunction("f_multi")
+    fun fMulti() = LuaMultiReturn(2, 3, 4)
+
     override fun toLua(lua: Lua) = pushLua(lua)
 }
 
@@ -25,6 +29,8 @@ object TestObj {
     fun create_test2() = Test2()
     @LuaFunction
     fun create_test1() = Test1()
+    @LuaFunction
+    fun print(str: String) = println(str)
 }
 
 @LuaProvider("TestGenerated")
@@ -53,6 +59,8 @@ fun main() {
         t:f1()
         local t2 = create_test1()
         t2:f1()
+        local a, b, c = t2:f_multi()
+        print("" .. a .. ", " .. b .. ", " .. c)
         t2:f2() -- must failed
     """.trimIndent(), "name"
         )

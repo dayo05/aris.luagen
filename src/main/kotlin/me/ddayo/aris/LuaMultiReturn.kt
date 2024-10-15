@@ -19,7 +19,10 @@ class LuaMultiReturn(private vararg val vars: Any) {
     }
 
     fun luaFn(lua: Lua): Int {
-        for(x in vars) push(lua, x)
+        for(x in vars)
+            push(lua, x)
         return vars.size
     }
+
+    val size get() = vars.size
 }

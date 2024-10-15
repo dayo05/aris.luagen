@@ -4,16 +4,47 @@ import me.ddayo.aris.gen.LuaGenerated
 import party.iroiro.luajava.Lua
 
 object LuaMain {
-    fun <T> push(lua: Lua, it: T) {
+    fun <T> push(lua: Lua, it: T): Int {
         when (it) {
-            null -> lua.pushNil()
-            is Number -> lua.push(it)
-            is Boolean -> lua.push(it)
-            is String -> lua.push(it)
-            is Map<*, *> -> lua.push(it)
-            is Class<*> -> lua.pushJavaClass(it)
-            is ILuaStaticDecl -> it.toLua(lua)
-            else -> lua.pushJavaObject(it as Any)
+            null -> {
+                lua.pushNil()
+                return 1
+            }
+            is Number -> {
+                lua.push(it)
+                return 1
+            }
+            is Boolean -> {
+                lua.push(it)
+                return 1
+            }
+            is String -> {
+                lua.push(it)
+                return 1
+            }
+            is Map<*, *> -> {
+                lua.push(it)
+                return 1
+            }
+            is Class<*> -> {
+                lua.pushJavaClass(it)
+                return 1
+            }
+            is ILuaStaticDecl -> {
+                it.toLua(lua)
+                return 1
+            }
+            is LuaMultiReturn -> {
+                it.luaFn(lua)
+                return it.size
+            }
+            is Unit -> {
+                return 0
+            }
+            else -> {
+                lua.pushJavaObject(it as Any)
+                return 1
+            }
         }
     }
 
