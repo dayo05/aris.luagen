@@ -29,20 +29,19 @@ interface CoroutineProvider {
     }
 
     @LuaProvider
-    class LuaCoroutineIntegration<T>(sequence: Sequence<CoroutineReturn<T>>): ILuaStaticDecl {
+    class LuaCoroutineIntegration<T>(sequence: Sequence<CoroutineReturn<T>>) {
         private val iter = sequence.iterator()
 
         @LuaFunction("next_iter")
+        @JvmName("next_iter")
         fun nextIter(): CoroutineReturn<T> {
             if(!iter.hasNext()) return CoroutineReturn.breakTask()
             return iter.next()
         }
-
-        override fun toLua(lua: Lua) = pushLua(lua)
     }
 
     @LuaProvider
-    class CoroutineReturn<T>(val _isBreak: Boolean): ILuaStaticDecl {
+    class CoroutineReturn<T>(val _isBreak: Boolean) {
         var returnValue: T? = null
         var until: (() -> Boolean)? = null
 
@@ -51,6 +50,7 @@ interface CoroutineProvider {
         @LuaFunction("value")
         fun value() = returnValue
         @LuaFunction("is_break")
+        @JvmName("is_break")
         fun isBreak() = _isBreak
 
         companion object {
@@ -58,7 +58,5 @@ interface CoroutineProvider {
             fun <T> breakTask() = CoroutineReturn<T>(true)
             fun <T> yield(until: () -> Boolean) = CoroutineReturn<T>(false).apply { this.until = until }
         }
-
-        override fun toLua(lua: Lua) = pushLua(lua)
     }
 }
