@@ -49,6 +49,8 @@ object LuaMain {
     }
 
     internal fun initLua(lua: Lua) {
+        lua.openLibraries()
+
         run {
             lua.pushJavaObject(Any())
             lua.getMetatable(-1)
