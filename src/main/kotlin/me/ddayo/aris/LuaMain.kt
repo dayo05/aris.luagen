@@ -64,11 +64,9 @@ object LuaMain {
                 lua.getGlobal("aris__obj_mt")
                 lua.setMetatable(-2)
                 lua.getGlobal("aris__obj_mt")
-                lua.getField(-2, "__gc")
+                lua.getField(-1, "__gc")
                 lua.pushValue(1)
-                println("Before GC Called")
-                lua.pCall(1, 0) // not working yet...
-                println("After GC Called")
+                lua.pCall(1, 0)
                 lua.pop(1)
                 0
             }
