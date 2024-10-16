@@ -11,9 +11,12 @@ open class LuaEngine {
         LuaMain.initLua(lua)
     }
 
-    private val tasks = mutableListOf<LuaTask>()
-    fun addTask(task: LuaTask) {
+    val tasks = mutableListOf<LuaTask>()
+
+    fun createTask(code: String, name: String, repeat: Boolean = false): LuaTask {
+        val task = LuaTask(code, name, repeat)
         tasks.add(task)
+        return task
     }
 
     fun loop() {
@@ -30,6 +33,8 @@ open class LuaEngine {
             private set
         private lateinit var coroutine: AbstractLua
         private val refIdx: Int // function to executed inside coroutine
+
+        public var isPaused = false
 
         init {
             lua.load("""return function(task)
@@ -48,6 +53,7 @@ open class LuaEngine {
 
         fun loop() {
             running = true
+            if(isPaused) return
             if(!coroutine.resume(0)) {
                 coroutine.close()
                 if(repeat) {

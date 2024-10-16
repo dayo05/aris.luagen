@@ -56,7 +56,6 @@ object LuaMain {
             lua.getMetatable(-1)
             lua.setGlobal("aris__obj_mt")
 
-            // TODO
             if(lua.getMetaField(-1, "__gc") == 0) throw NoSuchElementException("Cannot retrieve __gc metafield")
             lua.setGlobal("aris__gc_internal")
             lua.push { lua ->

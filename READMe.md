@@ -65,7 +65,7 @@ class MyEngine: LuaEngine() {
 class Main {
     fun main() {
         val engine = MyEngine()
-        engine.addTask(engine.LuaTask("""
+        engine.createTask("""
         -- your code here
         local a = create_kotlin_class()
         a:myFUnction(1) -- invoke a.myFUnction with parameter 1
@@ -74,7 +74,7 @@ class Main {
         coroutine.yield() -- this exists from lua context
         
         custom_function() -- this executed on second loop
-        """))
+        """, "some_task")
         engine.loop() // execute function
         engine.loop() // resume lua code execution
     }
@@ -93,6 +93,3 @@ class Main {
 1. This need extra initialization
 2. I hacked JNI side of luajava for some features so it can be unstable
 > I am tracking some issue on original luajava to make it stable as I can :)
-
-## Known issue
-1. GC does not work fine now. I am fixing this with highest priority.

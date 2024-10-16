@@ -56,9 +56,8 @@ class TestEngine : LuaEngine() {
 
 fun main() {
     val engine = TestEngine()
-    engine.addTask(
-        engine.LuaTask(
-            """
+    engine.createTask(
+        """
             local t = create_test2()
             t:f2()
             t:f1()
@@ -75,12 +74,10 @@ fun main() {
                 coroutine.yield()
             end
         """.trimIndent(), "name"
-        )
     )
-    var a = 0
-    while(true) {
+
+    while (true) {
         engine.loop()
-        // if((++a % 10 == 0)) println(a)
         println(Runtime.getRuntime().totalMemory())
         Thread.sleep(100)
     }
