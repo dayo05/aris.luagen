@@ -11,7 +11,7 @@ import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
 
 @LuaProvider("TestGenerated")
-open class Test1: ILuaStaticDecl {
+open class Test1 : ILuaStaticDecl {
     @LuaFunction
     fun f1() {
         println("F1 called")
@@ -27,14 +27,19 @@ open class Test1: ILuaStaticDecl {
 object TestObj {
     @LuaFunction
     fun create_test2() = Test2()
+
     @LuaFunction
     fun create_test1() = Test1()
+
     @LuaFunction
     fun print(str: String) = println(str)
+
+    @LuaFunction("get_time")
+    fun gt() = System.currentTimeMillis()
 }
 
 @LuaProvider("TestGenerated")
-class Test2: Test1(), ILuaStaticDecl {
+class Test2 : Test1(), ILuaStaticDecl {
     @LuaFunction
     fun f2() {
         println("F2 called")
@@ -43,7 +48,7 @@ class Test2: Test1(), ILuaStaticDecl {
     override fun toLua(lua: Lua) = pushLua(lua)
 }
 
-class TestEngine: LuaEngine() {
+class TestEngine : LuaEngine() {
     init {
         TestGenerated.initLua(lua)
     }
@@ -54,16 +59,30 @@ fun main() {
     engine.addTask(
         engine.LuaTask(
             """
-        local t = create_test2()
-        t:f2()
-        t:f1()
-        local t2 = create_test1()
-        t2:f1()
-        local a, b, c = t2:f_multi()
-        print("" .. a .. ", " .. b .. ", " .. c)
-        t2:f2() -- must failed
+        -- local t = create_test2()
+        -- t:f2()
+        -- t:f1()
+        -- local t2 = create_test1()
+        -- t2:f1()
+        -- local a, b, c = t2:f_multi()
+        -- print("" .. a .. ", " .. b .. ", " .. c)
+        
+        local v = 0
+        while true do
+            print("Hello: " .. v)
+            v = v + 1
+            task_sleep(1000)
+        end
+        
+        -- t2:f2() -- must failed
     """.trimIndent(), "name"
         )
     )
-    engine.loop()
+    var a = 0
+
+    while (true) {
+        engine.loop()
+        a++
+        Thread.yield()
+    }
 }

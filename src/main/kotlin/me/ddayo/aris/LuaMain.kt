@@ -85,11 +85,17 @@ object LuaMain {
 
             function task_sleep(time)
                 local current_time = get_time()
-                coroutine.yield(function() return get_time() - current_time > time end)
+                task_yield(function()
+                    return (get_time() - current_time) > time 
+                end)
             end
 
             function task_yield(fn) -- the most of use case of parameter `fn` is for coroutine integration
-                coroutine.yield(fn or true_fn)
+                fn = fn or true_fn
+                while true do
+                    coroutine.yield()
+                    if(fn()) then break end
+                end
             end
         """.trimIndent())
         lua.pCall(0, 0)

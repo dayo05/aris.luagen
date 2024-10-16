@@ -30,7 +30,6 @@ open class LuaEngine {
             private set
         private lateinit var coroutine: AbstractLua
         private val refIdx: Int // function to executed inside coroutine
-        private var yieldRule: LuaValue? = null
 
         init {
             lua.load("""return function(task)
@@ -48,22 +47,14 @@ open class LuaEngine {
         }
 
         fun loop() {
-            if(yieldRule?.call()?.firstOrNull()?.toJavaObject() as? Boolean == false) return
             running = true
-            coroutine.pushJavaObject(this)
-            if(!coroutine.resume(1)) {
+            if(!coroutine.resume(0)) {
                 coroutine.close()
                 if(repeat) {
                     init()
                 }
                 else running = false
                 return
-            }
-            if(coroutine.top != 0) { // new yield rule exists
-                yieldRule = coroutine.get().also {
-                    if(it.type() != Lua.LuaType.FUNCTION)
-                        throw Exception("Yielded value must be the function")
-                }
             }
         }
 
