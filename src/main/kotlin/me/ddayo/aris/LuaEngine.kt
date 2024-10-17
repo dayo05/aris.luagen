@@ -21,6 +21,8 @@ open class LuaEngine(protected val lua: Lua) {
     open fun createTask(code: String, name: String, repeat: Boolean = false) = tasks.add(LuaTask(code, name, repeat))
 
     open inner class LuaTask(code: String, val name: String, val repeat: Boolean = false) {
+        val engine = this@LuaEngine
+
         var running = false
             private set
         private lateinit var coroutine: Lua
