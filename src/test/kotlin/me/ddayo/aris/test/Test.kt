@@ -8,6 +8,7 @@ import me.ddayo.aris.gen.TestGenerated
 import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
+import party.iroiro.luajava.luajit.LuaJit
 import kotlin.random.Random
 
 @LuaProvider("TestGenerated")
@@ -48,14 +49,14 @@ class Test2 : Test1(), ILuaStaticDecl {
     override fun toLua(lua: Lua) = pushLua(lua)
 }
 
-class TestEngine : LuaEngine() {
+class TestEngine(lua: Lua) : LuaEngine(lua) {
     init {
         TestGenerated.initLua(lua)
     }
 }
 
 fun main() {
-    val engine = TestEngine()
+    val engine = TestEngine(LuaJit())
     engine.createTask(
         """
             local t = create_test2()
