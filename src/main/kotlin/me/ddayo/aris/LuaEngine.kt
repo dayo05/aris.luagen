@@ -1,6 +1,7 @@
 package me.ddayo.aris
 
 import party.iroiro.luajava.Lua
+import party.iroiro.luajava.LuaException
 
 open class LuaEngine(protected val lua: Lua) {
     init {
@@ -11,14 +12,15 @@ open class LuaEngine(protected val lua: Lua) {
 
     fun loop() {
         val toRemove = mutableListOf<LuaTask>()
-        for(task in tasks) {
+        for (task in tasks) {
             task.loop()
-            if(!task.running) toRemove.add(task)
+            if (!task.running) toRemove.add(task)
         }
         tasks.removeAll(toRemove)
     }
 
-    open fun createTask(code: String, name: String, repeat: Boolean = false) = tasks.add(LuaTask(code, name, repeat))
+    open fun createTask(code: String, name: String, repeat: Boolean = false) =
+        LuaTask(code, name, repeat).also { tasks.add(it) }
 
     open inner class LuaTask(code: String, val name: String, val repeat: Boolean = false) {
         val engine = this@LuaEngine
@@ -30,14 +32,24 @@ open class LuaEngine(protected val lua: Lua) {
 
         open var isPaused = false
 
-        init {
-            lua.load("""return function(task)
-                |    $code
-                |end""".trimMargin())
-            lua.pCall(0, 1)
-            refIdx = lua.ref()
+        val isValid = try {
+            lua.load(
+                """return function(task)
+            |    $code
+            |end""".trimMargin()
+            )
+            true
+        } catch (e: LuaException) {
+            false
+        }
 
-            init()
+        init {
+            if(isValid) {
+                lua.pCall(0, 1)
+                refIdx = lua.ref()
+                init()
+            }
+            else refIdx = -1
         }
 
         private fun init() {
@@ -47,13 +59,12 @@ open class LuaEngine(protected val lua: Lua) {
 
         fun loop() {
             running = true
-            if(isPaused) return
-            if(!coroutine.resume(0)) {
+            if (isPaused) return
+            if (!coroutine.resume(0)) {
                 coroutine.close()
-                if(repeat) {
+                if (repeat) {
                     init()
-                }
-                else running = false
+                } else running = false
                 return
             }
         }
