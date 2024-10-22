@@ -80,15 +80,15 @@ fun main() {
                 for x = 0, 1000 do
                     d[rand(100)] = { a = create_test2() }
                 end
-                -- print(collectgarbage("count"))
-                coroutine.yield()
+                print(collectgarbage("count"))
+                task_sleep(10000)
             end
         """.trimIndent(), "name"
     )
 
     while (true) {
         engine.loop()
-        println(Runtime.getRuntime().totalMemory())
+        // println(Runtime.getRuntime().totalMemory())
         Thread.sleep(100)
     }
 }

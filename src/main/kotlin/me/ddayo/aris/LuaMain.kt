@@ -78,6 +78,12 @@ object LuaMain {
             lua.pop(1)
         }
 
+        lua.push { lua ->
+            lua.push(System.currentTimeMillis())
+            1
+        }
+        lua.setGlobal("get_time")
+
         lua.load("""
             local function true_fn() return true end
 
