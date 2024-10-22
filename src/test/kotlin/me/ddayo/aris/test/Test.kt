@@ -2,6 +2,7 @@ package me.ddayo.aris.test
 
 import me.ddayo.aris.ILuaStaticDecl
 import me.ddayo.aris.LuaEngine
+import me.ddayo.aris.LuaMultiReturn
 import me.ddayo.aris.gen.Test1_LuaGenerated
 import me.ddayo.aris.gen.Test2_LuaGenerated
 import me.ddayo.aris.gen.TestGenerated
@@ -20,9 +21,10 @@ open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
 
     var a = 0
     @LuaFunction
-    fun incr() {
+    fun incr(): LuaMultiReturn {
         a++
         println("New a: $a")
+        return LuaMultiReturn(a, Random.nextDouble())
     }
 }
 
@@ -67,10 +69,12 @@ fun main() {
             t:f1()
             local t2 = create_test1()
             t2:f1()
-            t:incr()
-            t:incr()
+            l1, l2 = t:incr()
+            print(l1 .. ", " .. l2)
+            l1, l2 = t:incr()
+            print(l1 .. ", " .. l2)
             local d = {}
-             t2:f2() -- must failed
+            -- t2:f2() -- must failed
             while true do
                 local a = ""
                 for x = 0, 1000 do

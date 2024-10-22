@@ -4,7 +4,6 @@ aris.luagen supports inheritance wow!!
 
 This is example code:
 ```kotlin
-// This code is same with test/me/ddayo/aris/test/Test.kt
 package me.ddayo.aris.test
 
 @LuaProvider("TestGenerated")
