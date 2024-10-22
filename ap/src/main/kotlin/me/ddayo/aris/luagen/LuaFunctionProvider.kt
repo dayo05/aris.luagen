@@ -391,6 +391,7 @@ import me.ddayo.aris.LuaMultiReturn
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 import me.ddayo.aris.LuaMain.push
+import me.ddayo.aris.ILuaStaticDecl
 
 object $clName {
     fun initLua(lua: Lua) {
@@ -464,9 +465,8 @@ object $clName {
 """ + cls.entries.joinToString("\n") { (k, v) ->
                             if (k == "null") return@joinToString ""
                             StringBuilder().apply {
-                                appendLine("object ${v.values.first().declaredClass?.simpleName?.asString()}_LuaGenerated {")
-                                appendLine("    fun $k.pushLua(lua: Lua) {")
-                                appendLine("        lua.pushJavaObject(this)")
+                                appendLine("object ${v.values.first().declaredClass?.simpleName?.asString()}_LuaGenerated: ILuaStaticDecl {")
+                                appendLine("    override fun toLua(lua: Lua) {")
                                 appendLine(
                                     "        lua.getGlobal(\"aris_${
                                         v.values.first().declaredClass?.qualifiedName?.asString()?.replace(".", "_")

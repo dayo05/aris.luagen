@@ -1,10 +1,9 @@
 package me.ddayo.aris
 
-import me.ddayo.aris.gen.CoroutineReturn_LuaGenerated.pushLua
-import me.ddayo.aris.gen.LuaCoroutineIntegration_LuaGenerated.pushLua
+import me.ddayo.aris.gen.CoroutineReturn_LuaGenerated
+import me.ddayo.aris.gen.LuaCoroutineIntegration_LuaGenerated
 import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
-import party.iroiro.luajava.Lua
 import kotlin.experimental.ExperimentalTypeInference
 
 interface CoroutineProvider {
@@ -29,7 +28,7 @@ interface CoroutineProvider {
     }
 
     @LuaProvider
-    class LuaCoroutineIntegration<T>(sequence: Sequence<CoroutineReturn<T>>): ILuaStaticDecl {
+    class LuaCoroutineIntegration<T>(sequence: Sequence<CoroutineReturn<T>>): ILuaStaticDecl by LuaCoroutineIntegration_LuaGenerated {
         private val iter = sequence.iterator()
 
         @LuaFunction("next_iter")
@@ -37,12 +36,10 @@ interface CoroutineProvider {
             if(!iter.hasNext()) return CoroutineReturn.breakTask()
             return iter.next()
         }
-
-        override fun toLua(lua: Lua) = pushLua(lua)
     }
 
     @LuaProvider
-    class CoroutineReturn<T>(val _isBreak: Boolean): ILuaStaticDecl {
+    class CoroutineReturn<T>(val _isBreak: Boolean): ILuaStaticDecl by CoroutineReturn_LuaGenerated {
         var returnValue: T? = null
         var until: (() -> Boolean)? = null
 
@@ -58,7 +55,5 @@ interface CoroutineProvider {
             fun <T> breakTask() = CoroutineReturn<T>(true)
             fun <T> yield(until: () -> Boolean) = CoroutineReturn<T>(false).apply { this.until = until }
         }
-
-        override fun toLua(lua: Lua) = pushLua(lua)
     }
 }

@@ -8,13 +8,11 @@ This is example code:
 package me.ddayo.aris.test
 
 @LuaProvider("TestGenerated")
-open class Test1: ILuaStaticDecl {
+open class Test1: ILuaStaticDecl by Test1_LuaGenerated {
     @LuaFunction
     fun f1() {
         println("F1 called")
     }
-
-    override fun toLua(lua: Lua) = pushLua(lua)
 }
 
 @LuaProvider
@@ -26,13 +24,11 @@ object TestObj {
 }
 
 @LuaProvider("TestGenerated")
-class Test2: Test1(), ILuaStaticDecl {
+class Test2: Test1(), ILuaStaticDecl by Test2_LuaGenerated {
     @LuaFunction
     fun f2() {
         println("F2 called")
     }
-
-    override fun toLua(lua: Lua) = pushLua(lua)
 }
 
 class TestEngine: LuaEngine() {

@@ -31,6 +31,7 @@ object LuaMain {
                 return 1
             }
             is ILuaStaticDecl -> {
+                lua.pushJavaObject(it)
                 it.toLua(lua)
                 return 1
             }

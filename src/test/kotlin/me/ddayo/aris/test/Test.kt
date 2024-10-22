@@ -2,8 +2,8 @@ package me.ddayo.aris.test
 
 import me.ddayo.aris.ILuaStaticDecl
 import me.ddayo.aris.LuaEngine
-import me.ddayo.aris.gen.Test1_LuaGenerated.pushLua
-import me.ddayo.aris.gen.Test2_LuaGenerated.pushLua
+import me.ddayo.aris.gen.Test1_LuaGenerated
+import me.ddayo.aris.gen.Test2_LuaGenerated
 import me.ddayo.aris.gen.TestGenerated
 import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
@@ -12,13 +12,18 @@ import party.iroiro.luajava.luajit.LuaJit
 import kotlin.random.Random
 
 @LuaProvider("TestGenerated")
-open class Test1 : ILuaStaticDecl {
+open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
     @LuaFunction
     fun f1() {
         println("F1 called")
     }
 
-    override fun toLua(lua: Lua) = pushLua(lua)
+    var a = 0
+    @LuaFunction
+    fun incr() {
+        a++
+        println("New a: $a")
+    }
 }
 
 @LuaProvider
@@ -40,13 +45,11 @@ object TestObj {
 }
 
 @LuaProvider("TestGenerated")
-class Test2 : Test1(), ILuaStaticDecl {
+class Test2 : Test1(), ILuaStaticDecl by Test2_LuaGenerated {
     @LuaFunction
     fun f2() {
         println("F2 called")
     }
-
-    override fun toLua(lua: Lua) = pushLua(lua)
 }
 
 class TestEngine(lua: Lua) : LuaEngine(lua) {
@@ -64,8 +67,10 @@ fun main() {
             t:f1()
             local t2 = create_test1()
             t2:f1()
+            t:incr()
+            t:incr()
             local d = {}
-            -- t2:f2() -- must failed
+             t2:f2() -- must failed
             while true do
                 local a = ""
                 for x = 0, 1000 do

@@ -12,7 +12,10 @@ class LuaMultiReturn(private vararg val vars: Any) {
                 is String -> lua.push(it)
                 is Map<*, *> -> lua.push(it)
                 is Class<*> -> lua.pushJavaClass(it)
-                is ILuaStaticDecl -> it.toLua(lua)
+                is ILuaStaticDecl -> {
+                    lua.pushJavaObject(it)
+                    it.toLua(lua)
+                }
                 else -> lua.pushJavaObject(it as Any)
             }
         }
