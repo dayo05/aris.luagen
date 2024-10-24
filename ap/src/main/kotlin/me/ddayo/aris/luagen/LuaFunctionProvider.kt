@@ -223,6 +223,119 @@ end
         }
     }
 
+    private abstract class AbstractKTProviderInstance(val inner: MutableMap<String, BindTargetLua> = mutableMapOf()) {
+        val luaBindings
+            get() = StringBuilder().apply {
+                inner.values.joinTo(this, "\n") { it.luaBind }
+            }
+
+        open val ktBindings
+            get() = StringBuilder().apply {
+                inner.values.joinTo(this, "\n") { it.ktBind }
+            }
+
+        val docStrings
+            get() = StringBuilder().apply {
+                inner.values.map { it.docString }.filter { it.isNotBlank() }.joinTo(this, "\n\n")
+            }
+
+        abstract fun getFunction(name: String): BindTargetLua
+
+        open val objectGenerated = StringBuilder()
+        open val metatableGenerated = StringBuilder()
+        var inherit: String? = null
+    }
+
+    private class KTObjectProviderInstance : AbstractKTProviderInstance() {
+        override fun getFunction(name: String) = inner.getOrPut(name) {
+            BindTargetLua(
+                name,
+                mutableListOf(),
+                null
+            )
+        }
+    }
+
+    private class KTProviderInstance(val declaredClass: KSClassDeclaration) : AbstractKTProviderInstance() {
+        override fun getFunction(name: String) = inner.getOrPut(name) {
+            BindTargetLua(
+                name,
+                mutableListOf(),
+                declaredClass
+            )
+        }
+
+        val className = declaredClass.qualifiedName!!.asString()
+        val simpleName = declaredClass.simpleName.asString()
+
+        override val ktBindings: StringBuilder
+            get() = StringBuilder().apply {
+                appendLine("lua.newTable()")
+
+                append(super.ktBindings)
+
+                appendLine(
+                    "lua.setGlobal(\"aris_${
+                        className.replace('.', '_')
+                    }\")"
+                )
+            }
+
+        override val objectGenerated = StringBuilder().apply {
+            appendLine("object ${simpleName}_LuaGenerated: ILuaStaticDecl {")
+            appendLine("    override fun toLua(lua: Lua) {")
+            appendLine(
+                "        lua.getGlobal(\"aris_${
+                    className.replace(".", "_")
+                }_mt\")"
+            )
+            appendLine("        lua.setMetatable(-2)")
+            appendLine("    }")
+            appendLine("}")
+        }
+
+        override val metatableGenerated: StringBuilder
+            get() = StringBuilder().apply {
+                val cln = className.replace('.', '_')
+                appendLine(
+                    """
+                                lua.newTable()
+                                lua.getGlobal("aris__gc")
+                                lua.setField(-2, "__gc")
+                                lua.getGlobal("aris__newindex")
+                                lua.setField(-2, "__newindex")
+                                lua.getGlobal("aris__eq")
+                                lua.setField(-2, "__eq")
+                                lua.newTable()"""
+                )
+
+                inner.keys.forEach {
+                    appendLine(
+                        """
+                                    lua.getGlobal("aris_${cln}_${it}")
+                                    lua.setField(-2, "$it")
+                                    """
+                    )
+                }
+
+                inherit?.let {
+                    appendLine(
+                        """
+                                lua.newTable()
+                                lua.getGlobal("aris_${it.replace(".", "_")}_mt")
+                                lua.getField(-1, "__index")
+                                lua.setField(-3, "__index")
+                                lua.pop(1)
+                                lua.setMetatable(-2)
+                                """.trimIndent()
+                    )
+                }
+
+                appendLine("lua.setField(-2, \"__index\")")
+                appendLine("lua.setGlobal(\"aris_${cln}_mt\")")
+            }
+    }
+
     companion object {
         private val luaFunctionAnnotationName = LuaFunction::class.java.canonicalName
         private val luaProviderAnnotationName = LuaProvider::class.java.canonicalName
@@ -231,12 +344,8 @@ end
 
         fun intoProjectedStr(classDecl: KSClassDeclaration): String {
             val s = StringBuilder(classDecl.qualifiedName!!.asString())
-            if (classDecl.typeParameters.isNotEmpty()) {
-                s.append('<')
-                for (x in 1 until classDecl.typeParameters.size)
-                    s.append("*, ")
-                s.append("*>")
-            }
+            if (classDecl.typeParameters.isNotEmpty())
+                (0 until classDecl.typeParameters.size).joinTo(s, prefix = "<", postfix = ">") { "*" }
             return s.toString()
         }
 
@@ -247,8 +356,9 @@ end
         logger = environment.logger
         return object : SymbolProcessor {
             val files = mutableSetOf<KSFile>()
-            val functions = mutableMapOf<String, MutableMap<String, MutableMap<String, BindTargetLua>>>()
-            val inherit = mutableMapOf<String, String>()
+
+            // Map<ProviderClass, Map<KTClassName, Map<KTFunctionName, BindingTarget>>>
+            val functions = mutableMapOf<String, MutableList<AbstractKTProviderInstance>>()
 
             override fun process(resolver: Resolver): List<KSAnnotated> {
                 parResolved = ParResolved(
@@ -290,9 +400,11 @@ end
                 }
 
                 byProvider.forEach { (provider, classes) ->
-                    functions[provider] = mutableMapOf()
-                    val fns = functions[provider]!!
+                    val fns = functions.getOrPut(provider) { mutableListOf() }
                     val sorter = Sorter()
+                    val inherit = mutableMapOf<String, String>()
+
+                    val nilFn = KTObjectProviderInstance().also { fns.add(it) }
                     classes.forEach { classDeclaration ->
                         sorter.addInstance(classDeclaration.qualifiedName!!.asString(), sorter.SorterInstance {
                             environment.logger.warn("Processing ${classDeclaration.simpleName.asString()}")
@@ -306,20 +418,17 @@ end
                                         .forEach { (fn, annot) ->
                                             val fnName =
                                                 if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                            val overloadFns =
-                                                fns.getOrPut("null") { mutableMapOf() }.getOrPut(fnName) {
-                                                    BindTargetLua(
-                                                        fnName,
-                                                        mutableListOf(),
-                                                        null
-                                                    )
-                                                }
+                                            val overloadFns = nilFn.getFunction(fnName)
                                             overloadFns.targets.add(BindTargetKt(fn, null, !annot.exportDoc))
                                             files.add(classDeclaration.containingFile!!)
                                         }
                                 }
 
                                 ClassKind.CLASS -> {
+                                    val clName = classDeclaration.qualifiedName!!.asString()
+                                    val ifn = KTProviderInstance(classDeclaration).also { fns.add(it) }
+                                    if (inherit[clName] != null) ifn.inherit = inherit[clName]
+
                                     classDeclaration.getDeclaredFunctions().mapNotNull {
                                         it.getAnnotationsByType(
                                             LuaFunction::class
@@ -328,14 +437,7 @@ end
                                         val fnName =
                                             if (annot.name == "!") fn.simpleName.asString() else annot.name
                                         val overloadFns =
-                                            fns.getOrPut(intoProjectedStr(classDeclaration)) { mutableMapOf() }
-                                                .getOrPut(fnName) {
-                                                    BindTargetLua(
-                                                        fnName,
-                                                        mutableListOf(),
-                                                        classDeclaration
-                                                    )
-                                                }
+                                            ifn.getFunction(fnName)
                                         overloadFns.targets.add(
                                             BindTargetKt(
                                                 fn,
@@ -355,10 +457,10 @@ end
                     classes.forEach { current ->
                         current.superTypes.map { it.resolve().declaration }.filterIsInstance<KSClassDeclaration>()
                             .forEach { parent ->
-                                environment.logger.warn("${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
                                 if (parent.isAnnotationPresent(LuaProvider::class)) {
-                                    inherit[current.qualifiedName!!.asString().replace(".", "_")] =
-                                        parent.qualifiedName!!.asString()
+                                    inherit[current.qualifiedName!!.asString()] = parent.qualifiedName!!.asString()
+                                    environment.logger.warn("${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
+
                                     if (sorter[parent.qualifiedName!!.asString()] != null)
                                         sorter.setParent(
                                             parent.qualifiedName!!.asString(),
@@ -380,8 +482,9 @@ end
                 val pkg = environment.options["package_name"] ?: "me.ddayo.aris.gen"
 
                 functions.entries.forEach { (clName, cls) ->
+                    logger.warn(clName)
                     val luaCode =
-                        cls.values.joinToString("\n") { fn -> fn.values.joinToString("\n") { it.luaBind.toString() } }
+                        cls.joinToString("\n") { fn -> fn.luaBindings }
 
                     val ktCode = StringBuilder().apply {
                         appendLine(
@@ -397,87 +500,16 @@ object $clName {
     fun initLua(lua: Lua) {
 """
                         )
-                        appendLine(cls.entries.joinToString("\n") { fn ->
-                            val sb = StringBuilder()
-                            if (fn.key != "null") {
-                                sb.appendLine("lua.newTable()")
-                            }
-
-                            sb.append(fn.value.values.joinToString("\n") { it.ktBind.toString() })
-
-                            if (fn.key != "null") {
-                                sb.appendLine(
-                                    "lua.setGlobal(\"aris_${
-                                        fn.key.replace('.', '_').replace("<", "").replace(">", "").replace(",", "")
-                                            .replace(" ", "").replace("*", "")
-                                    }\")"
-                                )
-                            }
-                            sb.toString()
-                        }) // write all static functions
+                        // Add all kotlin binding code(overloading resolved)
+                        appendLine(cls.joinToString("\n") { fn -> fn.ktBindings })
+                        // Add all lua code(overloading resolved here)
                         appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
                         appendLine("lua.pCall(0, 0)")
-                        appendLine(cls.entries.joinToString("") { fn ->
-                            if (fn.key == "null") return@joinToString ""
-                            val cln = fn.key.replace('.', '_').replace("<", "").replace(">", "").replace(",", "")
-                                .replace(" ", "").replace("*", "")
-                            val sb = StringBuilder()
-                            sb.appendLine(
-                                """
-                                lua.newTable()
-                                lua.getGlobal("aris__gc")
-                                lua.setField(-2, "__gc")
-                                lua.getGlobal("aris__newindex")
-                                lua.setField(-2, "__newindex")
-                                lua.getGlobal("aris__eq")
-                                lua.setField(-2, "__eq")
-                                lua.newTable()"""
-                            )
-                            fn.value.forEach {
-                                sb.appendLine(
-                                    """
-                                    lua.getGlobal("aris_${cln}_${it.key}")
-                                    lua.setField(-2, "${it.key}")
-                                    """
-                                )
-                            }
-
-                            inherit[cln]?.let {
-                                sb.appendLine(
-                                    """
-                                lua.newTable()
-                                lua.getGlobal("aris_${it.replace(".", "_")}_mt")
-                                lua.getField(-1, "__index")
-                                lua.setField(-3, "__index")
-                                lua.pop(1)
-                                lua.setMetatable(-2)
-                                """.trimIndent()
-                                )
-                            }
-
-                            sb.appendLine("lua.setField(-2, \"__index\")")
-                            sb.appendLine("lua.setGlobal(\"aris_${cln}_mt\")")
-                            sb.toString()
-                        })
-                        appendLine("""
-    }
-}
-""" + cls.entries.joinToString("\n") { (k, v) ->
-                            if (k == "null") return@joinToString ""
-                            StringBuilder().apply {
-                                appendLine("object ${v.values.first().declaredClass?.simpleName?.asString()}_LuaGenerated: ILuaStaticDecl {")
-                                appendLine("    override fun toLua(lua: Lua) {")
-                                appendLine(
-                                    "        lua.getGlobal(\"aris_${
-                                        v.values.first().declaredClass?.qualifiedName?.asString()?.replace(".", "_")
-                                    }_mt\")"
-                                )
-                                appendLine("        lua.setMetatable(-2)")
-                                appendLine("    }")
-                                appendLine("}")
-                            }.toString()
-                        }
-                        )
+                        // Add all metatable(for clean lua code and resolve inheritance)
+                        appendLine(cls.joinToString("") { fn -> fn.metatableGenerated })
+                        appendLine("}\n}")
+                        // Add generated kotlin extension method
+                        appendLine(cls.joinToString("\n") { v -> v.objectGenerated.toString() })
                     }.toString()
 
                     environment.codeGenerator.createNewFile(
@@ -498,9 +530,7 @@ object $clName {
                     if (environment.options["export_doc"] == "true")
                         environment.codeGenerator.createNewFileByPath(Dependencies(false), "${clName}_doc", "md")
                             .writer().apply {
-                                write(cls.values.joinToString("\n\n") {
-                                    it.values.map { it.docString }.filter { it.isNotBlank() }.joinToString("\n\n")
-                                })
+                                write(cls.joinToString("\n\n") { it.docStrings })
                                 close()
                             }
                 }
