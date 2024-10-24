@@ -1,5 +1,6 @@
 package me.ddayo.aris.test
 
+import me.ddayo.aris.CoroutineProvider
 import me.ddayo.aris.ILuaStaticDecl
 import me.ddayo.aris.LuaEngine
 import me.ddayo.aris.LuaMultiReturn
@@ -28,7 +29,7 @@ open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
     }
 }
 
-@LuaProvider
+@LuaProvider("TestGenerated")
 object TestObj {
     @LuaFunction
     fun create_test2() = Test2()
@@ -47,10 +48,19 @@ object TestObj {
 }
 
 @LuaProvider("TestGenerated")
-class Test2 : Test1(), ILuaStaticDecl by Test2_LuaGenerated {
+class Test2 : Test1(), ILuaStaticDecl by Test2_LuaGenerated, CoroutineProvider {
     @LuaFunction
     fun f2() {
         println("F2 called")
+    }
+
+    @LuaFunction("coroutine_test")
+    fun coroutineTest() = coroutine {
+        val current = System.currentTimeMillis()
+        println("A")
+        yieldUntil { current + 2000 < System.currentTimeMillis() } // wait 2 sec
+        println("B")
+        breakTask(1, 2, 3)
     }
 }
 
@@ -73,6 +83,7 @@ fun main() {
             print(l1 .. ", " .. l2)
             l1, l2 = t:incr()
             print(l1 .. ", " .. l2)
+            print(t:coroutine_test())
             local d = {}
             -- t2:f2() -- must failed
             while true do
@@ -80,7 +91,7 @@ fun main() {
                 for x = 0, 1000 do
                     d[rand(100)] = { a = create_test2() }
                 end
-                print(collectgarbage("count"))
+                print(task:get_task_name() .. ": " .. collectgarbage("count"))
                 task_sleep(10000)
             end
         """.trimIndent(), "name"

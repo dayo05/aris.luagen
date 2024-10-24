@@ -1,5 +1,8 @@
 package me.ddayo.aris
 
+import me.ddayo.aris.gen.LuaTask_LuaGenerated
+import me.ddayo.aris.luagen.LuaFunction
+import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 
@@ -22,7 +25,8 @@ open class LuaEngine(protected val lua: Lua) {
     open fun createTask(code: String, name: String, repeat: Boolean = false) =
         LuaTask(code, name, repeat).also { tasks.add(it) }
 
-    open inner class LuaTask(code: String, val name: String, val repeat: Boolean = false) {
+    @LuaProvider
+    open inner class LuaTask(code: String, val name: String, val repeat: Boolean = false): ILuaStaticDecl by LuaTask_LuaGenerated {
         val engine = this@LuaEngine
 
         var running = false
@@ -52,15 +56,24 @@ open class LuaEngine(protected val lua: Lua) {
             else refIdx = -1
         }
 
+        private var isInitialLoop = false
+
         private fun init() {
             coroutine = lua.newThread()
             coroutine.refGet(refIdx) // code
+            isInitialLoop = true
         }
+
 
         fun loop() {
             running = true
             if (isPaused) return
-            if (!coroutine.resume(0)) {
+
+            if(isInitialLoop) {
+                coroutine.pushJavaObject(this)
+                toLua(coroutine)
+            }
+            if (!coroutine.resume(if(isInitialLoop) 1 else 0)) {
                 coroutine.close()
                 if (repeat) {
                     init()
@@ -77,5 +90,9 @@ open class LuaEngine(protected val lua: Lua) {
         open fun remove() {
             tasks.remove(this)
         }
+
+        @LuaFunction("get_task_name")
+        @JvmName("get_name")
+        fun getName() = name
     }
 }
