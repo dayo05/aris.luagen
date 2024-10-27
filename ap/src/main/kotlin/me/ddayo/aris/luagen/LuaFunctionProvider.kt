@@ -383,11 +383,7 @@ end
                 val defCln = environment.options["default_class_name"] ?: "LuaGenerated"
 
                 val byProvider = mutableMapOf<String, MutableList<KSClassDeclaration>>()
-                val ret: Sequence<KSAnnotated>
                 resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).let { providers ->
-                    ret = providers.filter { !it.validate() }
-                    environment.logger.warn("it.validate failed on " + ret.joinToString { it.location.toString() })
-
                     providers.mapNotNull { it as? KSClassDeclaration }
                         .forEach { classDeclaration ->
                             val cln =
@@ -407,49 +403,39 @@ end
                     val nilFn = KTObjectProviderInstance().also { fns.add(it) }
                     classes.forEach { classDeclaration ->
                         sorter.addInstance(classDeclaration.qualifiedName!!.asString(), sorter.SorterInstance {
-                            environment.logger.warn("Processing ${classDeclaration.simpleName.asString()}")
-                            when (classDeclaration.classKind) {
-                                ClassKind.OBJECT -> {
-                                    classDeclaration.getDeclaredFunctions().mapNotNull {
-                                        it.getAnnotationsByType(
-                                            LuaFunction::class
-                                        ).firstOrNull()?.let { annot -> it to annot }
-                                    }
-                                        .forEach { (fn, annot) ->
-                                            val fnName =
-                                                if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                            val overloadFns = nilFn.getFunction(fnName)
-                                            overloadFns.targets.add(BindTargetKt(fn, null, !annot.exportDoc))
-                                            files.add(classDeclaration.containingFile!!)
-                                        }
-                                }
+                            logger.warn("Processing: ${classDeclaration.qualifiedName?.asString()}")
+                            val isStatic = when (classDeclaration.classKind) {
+                                ClassKind.CLASS -> false
+                                ClassKind.OBJECT -> true
+                                else -> throw LuaBindingException(
+                                    "Cannot process ${classDeclaration.qualifiedName?.asString()}: Provider not supports object"
+                                )
+                            }
 
-                                ClassKind.CLASS -> {
+                            val ifn =
+                                if (isStatic) nilFn
+                                else KTProviderInstance(classDeclaration).also { fns.add(it) }.also {
                                     val clName = classDeclaration.qualifiedName!!.asString()
-                                    val ifn = KTProviderInstance(classDeclaration).also { fns.add(it) }
-                                    if (inherit[clName] != null) ifn.inherit = inherit[clName]
-
-                                    classDeclaration.getDeclaredFunctions().mapNotNull {
-                                        it.getAnnotationsByType(
-                                            LuaFunction::class
-                                        ).firstOrNull()?.let { annot -> it to annot }
-                                    }.forEach { (fn, annot) ->
-                                        val fnName =
-                                            if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                        val overloadFns =
-                                            ifn.getFunction(fnName)
-                                        overloadFns.targets.add(
-                                            BindTargetKt(
-                                                fn,
-                                                classDeclaration,
-                                                !annot.exportDoc
-                                            )
-                                        )
-                                        files.add(classDeclaration.containingFile!!)
-                                    }
+                                    if (inherit[clName] != null) it.inherit = inherit[clName]
                                 }
 
-                                else -> throw LuaBindingException("Cannot process ${classDeclaration.qualifiedName}: Provider not supports object")
+                            classDeclaration.getDeclaredFunctions().mapNotNull {
+                                it.getAnnotationsByType(
+                                    LuaFunction::class
+                                ).firstOrNull()?.let { annot -> it to annot }
+                            }.forEach { (fn, annot) ->
+                                val fnName =
+                                    if (annot.name == "!") fn.simpleName.asString() else annot.name
+                                val overloadFns =
+                                    ifn.getFunction(fnName)
+                                overloadFns.targets.add(
+                                    BindTargetKt(
+                                        fn,
+                                        if (isStatic) null else classDeclaration,
+                                        !annot.exportDoc
+                                    )
+                                )
+                                files.add(classDeclaration.containingFile!!)
                             }
                         })
                     }
@@ -459,7 +445,7 @@ end
                             .forEach { parent ->
                                 if (parent.isAnnotationPresent(LuaProvider::class)) {
                                     inherit[current.qualifiedName!!.asString()] = parent.qualifiedName!!.asString()
-                                    environment.logger.warn("${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
+                                    environment.logger.warn("Inherit: ${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
 
                                     if (sorter[parent.qualifiedName!!.asString()] != null)
                                         sorter.setParent(
@@ -473,7 +459,10 @@ end
                     sorter.process()
                 }
 
-                return ret.toList()
+                val ret = resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).filter { !it.validate() }.toList()
+                if(ret.isNotEmpty())
+                    logger.warn("Some class not processed: ${ret.joinToString { it.location.toString() }}")
+                return ret
             }
 
             override fun finish() {
