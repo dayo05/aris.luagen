@@ -8,6 +8,7 @@ import me.ddayo.aris.gen.Test1_LuaGenerated
 import me.ddayo.aris.gen.Test2_LuaGenerated
 import me.ddayo.aris.gen.TestGenerated
 import me.ddayo.aris.luagen.LuaFunction
+import me.ddayo.aris.luagen.LuaInstance
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.luajit.LuaJit
@@ -16,8 +17,16 @@ import kotlin.random.Random
 @LuaProvider("TestGenerated")
 open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
     @LuaFunction
-    fun f1() {
-        println("F1 called")
+    fun f1(x: Int) {
+        println("F1 called with $x")
+    }
+
+    @LuaFunction
+    fun getLua(@LuaInstance instance: Lua) {
+        instance.getGlobal("test1")
+        println(instance.get().type())
+        instance.push(5)
+        instance.setGlobal("test1")
     }
 
     var a = 0
@@ -26,6 +35,11 @@ open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
         a++
         println("New a: $a")
         return LuaMultiReturn(a, Random.nextDouble())
+    }
+
+    @LuaFunction
+    fun comp(other: Test1) {
+        println("Compare! this: $a, other: ${other.a}")
     }
 }
 
@@ -76,15 +90,19 @@ fun main() {
         """
             local t = create_test2()
             t:f2()
-            t:f1()
+            t:f1(13)
             local t2 = create_test1()
-            t2:f1()
+            t2:f1(55)
             l1, l2 = t:incr()
             print(l1 .. ", " .. l2)
             l1, l2 = t:incr()
             print(l1 .. ", " .. l2)
             print(t:coroutine_test())
             local d = {}
+            t:comp(t2)
+            t2:comp(t)
+            t:getLua()
+            t:getLua()
             -- t2:f2() -- must failed
             while true do
                 local a = ""
@@ -92,6 +110,7 @@ fun main() {
                     d[rand(100)] = { a = create_test2() }
                 end
                 print(task:get_task_name() .. ": " .. collectgarbage("count"))
+                print(test1)
                 task_sleep(10000)
             end
         """.trimIndent(), "name"
