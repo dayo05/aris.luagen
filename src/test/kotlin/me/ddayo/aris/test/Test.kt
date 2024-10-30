@@ -4,8 +4,9 @@ import me.ddayo.aris.CoroutineProvider
 import me.ddayo.aris.ILuaStaticDecl
 import me.ddayo.aris.LuaEngine
 import me.ddayo.aris.LuaMultiReturn
-import me.ddayo.aris.gen.Test1_LuaGenerated
-import me.ddayo.aris.gen.Test2_LuaGenerated
+import me.ddayo.aris.gen.TestGenerated.Test1_LuaGenerated
+import me.ddayo.aris.gen.TestGenerated.Test2_LuaGenerated
+import me.ddayo.aris.gen.TestGenerated.TestAris_LuaGenerated
 import me.ddayo.aris.gen.TestGenerated
 import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaInstance
@@ -78,6 +79,33 @@ class Test2 : Test1(), ILuaStaticDecl by Test2_LuaGenerated, CoroutineProvider {
     }
 }
 
+@LuaProvider("TestGenerated")
+class TestAris: ILuaStaticDecl by TestAris_LuaGenerated {
+    var a = 0
+    @LuaFunction
+    fun test(): TestAris {
+        a++
+        return this
+    }
+}
+
+class TestReflection {
+    var a = 0
+    fun test(): TestReflection {
+        a++
+        return this
+    }
+}
+
+@LuaProvider("TestGenerated")
+object SpeedTest {
+    @LuaFunction
+    fun getTesters() = LuaMultiReturn(TestAris(), TestReflection())
+
+    @LuaFunction
+    fun getNano() = System.nanoTime()
+}
+
 class TestEngine(lua: Lua) : LuaEngine(lua) {
     init {
         TestGenerated.initLua(lua)
@@ -88,6 +116,30 @@ fun main() {
     val engine = TestEngine(LuaJit())
     engine.createTask(
         """
+            local k = 0
+            for i=1,1000 do k = k + i end
+            
+            local aris, reflection = getTesters()
+            
+            print("begin")
+            
+            -- local ep = 10000000
+            -- Original: 11220988583
+            --     Aris: 10608901500
+            
+            local ep = 100
+            -- Original: 2412125
+            --     Aris: 402875
+            local n
+            
+            n = getNano()
+            for i=1,ep do reflection = reflection:test() end
+            print("Original: " .. getNano() - n)
+            
+            n = getNano() 
+            for i=1,ep do aris = aris:test() end
+            print("Aris: " .. getNano() - n)
+            
             local t = create_test2()
             t:f2()
             t:f1(13)
@@ -101,6 +153,7 @@ fun main() {
             local d = {}
             t:comp(t2)
             t2:comp(t)
+            print(type(t))
             t:getLua()
             t:getLua()
             -- t2:f2() -- must failed
@@ -116,8 +169,14 @@ fun main() {
         """.trimIndent(), "name"
     )
 
+    val task = engine.tasks.first()
+    if(task.errorMessage.isNotEmpty())
+        println(task.errorMessage)
     while (true) {
         engine.loop()
+        if(task.errorMessage.isNotEmpty())
+            println(task.pullError())
+
         // println(Runtime.getRuntime().totalMemory())
         Thread.sleep(100)
     }

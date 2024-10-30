@@ -1,7 +1,7 @@
 package me.ddayo.aris
 
-import me.ddayo.aris.gen.CoroutineReturn_LuaGenerated
-import me.ddayo.aris.gen.LuaCoroutineIntegration_LuaGenerated
+import me.ddayo.aris.gen.LuaGenerated.CoroutineReturn_LuaGenerated
+import me.ddayo.aris.gen.LuaGenerated.LuaCoroutineIntegration_LuaGenerated
 import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
 import kotlin.experimental.ExperimentalTypeInference

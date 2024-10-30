@@ -7,8 +7,6 @@ import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 
 
-class LuaBindingException(message: String) : Exception(message)
-
 class LuaFunctionProcessorProvider : SymbolProcessorProvider {
     private class BindTargetKt(
         val funcCall: KSFunctionDeclaration, val declaredClass: KSClassDeclaration?, val isPrivate: Boolean
@@ -29,7 +27,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
             funcCall.parameters.joinToString(", ") { "${it.name?.asString()}: ${it.type.resolve().declaration.simpleName.asString()}" }
         val doc = funcCall.docString
 
-        var argPtr = 0
+        var argPtr = 1
         val ptStr = ptResolved.map {
             StringBuilder().apply {
                 argPtr += ArgumentManager.argFilters.firstOrNull { filter -> filter.isValid(it.second, it.first) }!!
@@ -49,23 +47,41 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
             var needResolve = 0
 
             // determine to unpack or not
-            if (argPtr != 0) {
-                appendLine("val arg = (0 until lua.top).map { lua.get() }.reversed()")
+            /*
+        lua.getGlobal("aris__obj_mt")
 
+        lua.getMetatable(1) // [aris__obj_mt, mt_1]
+        lua.pushValue(-2) // [aris__obj_mt, mt_1, aris__obj_mt]
+        lua.setMetatable(1) // [aris__obj_mt, mt_1]
+
+        lua.getMetatable(2) // [aris__obj_mt, mt_1, mt_2]
+        lua.pushValue(-3) // [aris__obj_mt, mt_1, mt_2, aris__obj_mt]
+        lua.setMetatable(2) // [aris__obj_mt, mt_1, mt_2]
+
+        val rt = (lua.toJavaObject(1) as me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration<*>).nextIter()
+
+        lua.setMetatable(2) // [aris__obj_mt, mt_1]
+        lua.setMetatable(1) // [aris__obj_mt]
+
+        lua.pop(1) // []
+             */
+            val ll = mutableListOf<Int>()
+            var pushed = false
+            if (argPtr != 0) {
                 // determine to replace metatable
                 if (ptResolved.any { parResolved.staticDeclResolved.isAssignableFrom(it.second) }) {
-                    appendLine("lua.getGlobal(\"aris__obj_mt\")")
-                    val ll = mutableListOf<Int>()
+                    pushed = true
+                    // appendLine("lua.getGlobal(\"aris__obj_mt\")")
+                    appendLine("lua.refGet(LuaMain._luaGlobalMt)")
                     ptResolved.forEachIndexed { index, ksType ->
-                        if (parResolved.staticDeclResolved.isAssignableFrom(ksType.second)) ll.add(index)
+                        if (parResolved.staticDeclResolved.isAssignableFrom(ksType.second)) ll.add(index + 1)
                     }
                     needResolve = ll.size
 
                     ll.forEachIndexed { index, v ->
-                        appendLine("lua.push(arg[$v])")
-                        appendLine("lua.getMetatable(-1)")
-                        appendLine("lua.pushValue(-${index * 2 + 3})")
-                        appendLine("lua.setMetatable(-3)")
+                        appendLine("lua.getMetatable($v)")
+                        appendLine("lua.pushValue(-${index + 2})")
+                        appendLine("lua.setMetatable($v)")
                     }
                 }
             }
@@ -73,13 +89,14 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
             if (isStatic) appendLine("val rt = ${funcCall.qualifiedName!!.asString()}($invStr)")
             else appendLine("val rt = (${ptStr[0]}).${funcCall.simpleName.asString()}($invStr)")
 
-            if (needResolve != 0) {
-                repeat(needResolve) {
-                    appendLine("lua.setMetatable(-2)")
-                    appendLine("lua.pop(1)")
+            if (ll.isNotEmpty())
+                ((ll.size - 1) downTo 0).forEach {
+                    appendLine("lua.setMetatable(${ll[it]})")
                 }
+
+            if (pushed)
                 appendLine("lua.pop(1)")
-            }
+
             appendLine("return@push push(lua, rt)")
             appendLine("}")
         }
@@ -87,7 +104,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         fun scoreCalcLua(fnName: String) = StringBuilder().apply {
             appendLine(
                 """
-if table_size >= $argPtr then
+if table_size >= ${argPtr - if(isStatic) 1 else 2} then
     local task_score = 0
     if task_score >= score then
         score = task_score
@@ -195,6 +212,7 @@ end
         abstract fun getFunction(name: String): BindTargetLua
 
         open val objectGenerated = StringBuilder()
+        open val refGenerated = StringBuilder()
         open val metatableGenerated = StringBuilder()
         var inherit: String? = null
     }
@@ -234,13 +252,17 @@ end
             appendLine("object ${simpleName}_LuaGenerated: ILuaStaticDecl {")
             appendLine("    override fun toLua(lua: Lua) {")
             appendLine(
-                "        lua.getGlobal(\"aris_${
+                "        lua.refGet(aris_${
                     className.replace(".", "_")
-                }_mt\")"
+                }_mt)"
             )
             appendLine("        lua.setMetatable(-2)")
             appendLine("    }")
             appendLine("}")
+        }
+
+        override val refGenerated: StringBuilder get() = StringBuilder().apply {
+            append("var aris_${className.replace('.', '_')}_mt = -1")
         }
 
         override val metatableGenerated: StringBuilder
@@ -271,7 +293,7 @@ end
                     appendLine(
                         """
                                 lua.newTable()
-                                lua.getGlobal("aris_${it.replace(".", "_")}_mt")
+                                lua.refGet(aris_${it.replace(".", "_")}_mt)
                                 lua.getField(-1, "__index")
                                 lua.setField(-3, "__index")
                                 lua.pop(1)
@@ -281,7 +303,7 @@ end
                 }
 
                 appendLine("lua.setField(-2, \"__index\")")
-                appendLine("lua.setGlobal(\"aris_${cln}_mt\")")
+                appendLine("aris_${cln}_mt = lua.ref()")
             }
     }
 
@@ -397,8 +419,11 @@ import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 import me.ddayo.aris.LuaMain.push
 import me.ddayo.aris.ILuaStaticDecl
+import me.ddayo.aris.LuaMain
 
-object $clName {
+object $clName {""")
+    appendLine(cls.joinToString("\n") { fn -> fn.refGenerated })
+appendLine("""
     fun initLua(lua: Lua) {
 """
                         )
@@ -409,9 +434,10 @@ object $clName {
                         appendLine("lua.pCall(0, 0)")
                         // Add all metatable(for clean lua code and resolve inheritance)
                         appendLine(cls.joinToString("") { fn -> fn.metatableGenerated })
-                        appendLine("}\n}")
+                        appendLine("}")
                         // Add generated kotlin extension method
                         appendLine(cls.joinToString("\n") { v -> v.objectGenerated.toString() })
+                        appendLine("}")
                     }.toString()
 
                     environment.codeGenerator.createNewFile(

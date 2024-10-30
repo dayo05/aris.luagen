@@ -49,21 +49,25 @@ object LuaMain {
         }
     }
 
+    var _luaGlobalMt = -1
+        private set
+    private var _luaGcInternal = -1
+
     internal fun initLua(lua: Lua) {
         lua.openLibraries()
 
         run {
             lua.pushJavaObject(Any())
             lua.getMetatable(-1)
-            lua.setGlobal("aris__obj_mt")
+            _luaGlobalMt = lua.ref()
 
             if(lua.getMetaField(-1, "__gc") == 0) throw NoSuchElementException("Cannot retrieve __gc metafield")
-            lua.setGlobal("aris__gc_internal")
+            _luaGcInternal = lua.ref()
             lua.push { lua ->
                 // lua.pushTable(...)
-                lua.getGlobal("aris__obj_mt")
+                lua.refGet(_luaGlobalMt)
                 lua.setMetatable(-2)
-                lua.getGlobal("aris__gc_internal")
+                lua.refGet(_luaGcInternal)
                 lua.pushValue(1)
                 lua.pCall(1, 0)
                 lua.pop(1)

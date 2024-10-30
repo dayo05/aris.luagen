@@ -1,6 +1,6 @@
 package me.ddayo.aris
 
-import me.ddayo.aris.gen.LuaTask_LuaGenerated
+import me.ddayo.aris.gen.LuaGenerated.LuaTask_LuaGenerated
 import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua

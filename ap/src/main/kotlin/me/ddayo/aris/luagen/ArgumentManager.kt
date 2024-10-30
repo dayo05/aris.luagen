@@ -16,7 +16,7 @@ internal object ArgumentManager {
             param: KSValueParameter?
         ): Int {
             super.resolve(index, builder, declaredClass, param)
-            builder.append(".toString()")
+            builder.append(".toString($index) ?: \"null\"")
             return 1
         }
 
@@ -31,7 +31,7 @@ internal object ArgumentManager {
             param: KSValueParameter?
         ): Int {
             super.resolve(index, builder, declaredClass, param)
-            builder.append(".toInteger()")
+            builder.append(".toInteger($index)")
             return 1
         }
 
@@ -91,7 +91,7 @@ internal object ArgumentManager {
             param: KSValueParameter?
         ): Int {
             super.resolve(index, builder, declaredClass, param)
-            builder.append(".toNumber()")
+            builder.append(".toNumber($index)")
             return 1
         }
 
@@ -140,7 +140,7 @@ internal object ArgumentManager {
             param: KSValueParameter?
         ): Int {
             super.resolve(index, builder, declaredClass, param)
-            builder.append(".toJavaObject() as ${intoProjectedStr(declaredClass)}")
+            builder.append(".toJavaObject($index) as ${intoProjectedStr(declaredClass)}")
             return 1
         }
 
@@ -149,9 +149,7 @@ internal object ArgumentManager {
 
     interface Argument {
         fun resolve(index: Int, builder: StringBuilder, declaredClass: KSClassDeclaration, param: KSValueParameter?): Int {
-            builder.append("arg[")
-            builder.append(index)
-            builder.append("]")
+            builder.append("lua")
             return 1
         }
 
