@@ -88,6 +88,7 @@ open class LuaEngine(protected val lua: Lua) {
                     !coroutine.resume(if (isInitialLoop) 1 else 0)
                 } catch (e: LuaException) {
                     errorMessage.appendLine(e.message)
+                    errorMessage.appendLine(e.stackTraceToString())
                     true
                 }
             ) {
