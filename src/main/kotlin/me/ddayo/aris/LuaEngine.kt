@@ -26,7 +26,8 @@ open class LuaEngine(protected val lua: Lua) {
         LuaTask(code, name, repeat).also { tasks.add(it) }
 
     @LuaProvider
-    open inner class LuaTask(code: String, val name: String, val repeat: Boolean = false): ILuaStaticDecl by LuaTask_LuaGenerated {
+    open inner class LuaTask(code: String, val name: String, val repeat: Boolean = false) :
+        ILuaStaticDecl by LuaTask_LuaGenerated {
         val engine = this@LuaEngine
 
         var running = false
@@ -48,12 +49,11 @@ open class LuaEngine(protected val lua: Lua) {
         }
 
         init {
-            if(isValid) {
+            if (isValid) {
                 lua.pCall(0, 1)
                 refIdx = lua.ref()
                 init()
-            }
-            else refIdx = -1
+            } else refIdx = -1
         }
 
         private var isInitialLoop = false
@@ -64,16 +64,30 @@ open class LuaEngine(protected val lua: Lua) {
             isInitialLoop = true
         }
 
+        var errorMessage: StringBuilder = StringBuilder()
+            private set
+
+        fun pullError(): StringBuilder {
+            val s = errorMessage
+            errorMessage = StringBuilder()
+            return s
+        }
 
         fun loop() {
             running = true
             if (isPaused) return
 
-            if(isInitialLoop) {
+            if (isInitialLoop) {
                 coroutine.pushJavaObject(this)
                 toLua(coroutine)
             }
-            if (!coroutine.resume(if(isInitialLoop) 1 else 0)) {
+            if (try {
+                    !coroutine.resume(if (isInitialLoop) 1 else 0)
+                } catch (e: LuaException) {
+                    errorMessage.appendLine(e.message)
+                    true
+                }
+            ) {
                 coroutine.close()
                 if (repeat) {
                     init()
