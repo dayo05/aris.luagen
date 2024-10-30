@@ -74,6 +74,8 @@ open class LuaEngine(protected val lua: Lua) {
         }
 
         fun loop() {
+            if (!isValid) return
+
             running = true
             if (isPaused) return
 
