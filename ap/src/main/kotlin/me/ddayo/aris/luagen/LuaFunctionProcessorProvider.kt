@@ -104,7 +104,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         fun scoreCalcLua(fnName: String) = StringBuilder().apply {
             appendLine(
                 """
-if table_size >= ${argPtr - if(isStatic) 1 else 2} then
+if table_size >= ${argPtr - if (isStatic) 1 else 2} then
     local task_score = 0
     if task_score >= score then
         score = task_score
@@ -215,6 +215,7 @@ end
         open val refGenerated = StringBuilder()
         open val metatableGenerated = StringBuilder()
         var inherit: String? = null
+        var inheritParent: String? = null
     }
 
     private class KTObjectProviderInstance : AbstractKTProviderInstance() {
@@ -261,9 +262,10 @@ end
             appendLine("}")
         }
 
-        override val refGenerated: StringBuilder get() = StringBuilder().apply {
-            append("var aris_${className.replace('.', '_')}_mt = -1")
-        }
+        override val refGenerated: StringBuilder
+            get() = StringBuilder().apply {
+                append("var aris_${className.replace('.', '_')}_mt = -1")
+            }
 
         override val metatableGenerated: StringBuilder
             get() = StringBuilder().apply {
@@ -290,10 +292,13 @@ end
                 }
 
                 inherit?.let {
+                    val inheritDecl = "aris_${it.replace(".", "_")}_mt".let {
+                        if (inheritParent != null) "$inheritParent.$it" else it
+                    }
                     appendLine(
                         """
                                 lua.newTable()
-                                lua.refGet(aris_${it.replace(".", "_")}_mt)
+                                lua.refGet($inheritDecl)
                                 lua.getField(-1, "__index")
                                 lua.setField(-3, "__index")
                                 lua.pop(1)
@@ -358,7 +363,11 @@ end
                             val ifn = if (isStatic) nilFn
                             else KTProviderInstance(classDeclaration).also { fns.add(it) }.also {
                                 val clName = classDeclaration.qualifiedName!!.asString()
-                                if (inherit[clName] != null) it.inherit = inherit[clName]
+                                if (inherit[clName] != null) {
+                                    it.inherit = inherit[clName]
+                                    it.inheritParent =
+                                        classDeclaration.getAnnotationsByType(LuaProvider::class).first().inherit
+                                }
                             }
 
                             classDeclaration.getDeclaredFunctions().mapNotNull {
@@ -421,9 +430,11 @@ import me.ddayo.aris.LuaMain.push
 import me.ddayo.aris.ILuaStaticDecl
 import me.ddayo.aris.LuaMain
 
-object $clName {""")
-    appendLine(cls.joinToString("\n") { fn -> fn.refGenerated })
-appendLine("""
+object $clName {"""
+                        )
+                        appendLine(cls.joinToString("\n") { fn -> fn.refGenerated })
+                        appendLine(
+                            """
     fun initLua(lua: Lua) {
 """
                         )
