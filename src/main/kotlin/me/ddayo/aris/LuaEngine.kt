@@ -37,6 +37,9 @@ open class LuaEngine(protected val lua: Lua) {
 
         open var isPaused = false
 
+        var errorMessage: StringBuilder = StringBuilder()
+            private set
+
         val isValid = try {
             lua.load(
                 """return function(task)
@@ -45,6 +48,7 @@ open class LuaEngine(protected val lua: Lua) {
             )
             true
         } catch (e: LuaException) {
+            errorMessage.append(e.message)
             false
         }
 
@@ -63,9 +67,6 @@ open class LuaEngine(protected val lua: Lua) {
             coroutine.refGet(refIdx) // code
             isInitialLoop = true
         }
-
-        var errorMessage: StringBuilder = StringBuilder()
-            private set
 
         fun pullError(): StringBuilder {
             val s = errorMessage
