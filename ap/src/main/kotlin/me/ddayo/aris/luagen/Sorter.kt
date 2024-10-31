@@ -1,11 +1,6 @@
 package me.ddayo.aris.luagen
 
 
-open class SorterException(msg: String): Exception(msg)
-class AlreadyFinalizedException: SorterException("Already sorted")
-class SorterKeyExistsException: SorterException("Key already exists")
-class ChainedDependencyException(msg: String): SorterException("Maybe chained dependency exists, left: $msg")
-
 class Sorter {
     private val instances = mutableMapOf<String, SorterInstance>()
     fun addInstance(key: String, instance: SorterInstance) {
