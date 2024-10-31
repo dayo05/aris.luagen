@@ -42,6 +42,11 @@ open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
     fun comp(other: Test1) {
         println("Compare! this: $a, other: ${other.a}")
     }
+
+    @LuaFunction
+    fun multiArgs(a: Int, b: Int, c: Test1, d: Test1) {
+        println("multiArgs($a, $b, $c)")
+    }
 }
 
 @LuaProvider("TestGenerated")
@@ -116,6 +121,8 @@ fun main() {
     val engine = TestEngine(LuaJit())
     engine.createTask(
         """
+            local tester = create_test2()
+            tester:multiArgs(1, 2, tester, tester)
             local k = 0
             for i=1,1000 do k = k + i end
             
