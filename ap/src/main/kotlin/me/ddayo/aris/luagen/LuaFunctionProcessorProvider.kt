@@ -44,27 +44,6 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
             appendLine("lua.push { lua ->")
 
-            var needResolve = 0
-
-            // determine to unpack or not
-            /*
-        lua.getGlobal("aris__obj_mt")
-
-        lua.getMetatable(1) // [aris__obj_mt, mt_1]
-        lua.pushValue(-2) // [aris__obj_mt, mt_1, aris__obj_mt]
-        lua.setMetatable(1) // [aris__obj_mt, mt_1]
-
-        lua.getMetatable(2) // [aris__obj_mt, mt_1, mt_2]
-        lua.pushValue(-3) // [aris__obj_mt, mt_1, mt_2, aris__obj_mt]
-        lua.setMetatable(2) // [aris__obj_mt, mt_1, mt_2]
-
-        val rt = (lua.toJavaObject(1) as me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration<*>).nextIter()
-
-        lua.setMetatable(2) // [aris__obj_mt, mt_1]
-        lua.setMetatable(1) // [aris__obj_mt]
-
-        lua.pop(1) // []
-             */
             val ll = mutableListOf<Int>()
             var pushed = false
             if (argPtr != 0) {
@@ -76,7 +55,6 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                     ptResolved.forEachIndexed { index, ksType ->
                         if (parResolved.staticDeclResolved.isAssignableFrom(ksType.second)) ll.add(index + 1)
                     }
-                    needResolve = ll.size
 
                     ll.forEachIndexed { index, v ->
                         appendLine("lua.getMetatable($v)")
@@ -96,6 +74,8 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
             if (pushed)
                 appendLine("lua.pop(1)")
+
+            appendLine("lua.pop(${argPtr - 1})")
 
             appendLine("return@push push(lua, rt)")
             appendLine("}")
@@ -293,7 +273,7 @@ end
 
                 inherit?.let {
                     val inheritDecl = "aris_${it.replace(".", "_")}_mt".let {
-                        if (inheritParent != null) "$inheritParent.$it" else it
+                        if (inheritParent?.isNotBlank() == true) "$inheritParent.$it" else it
                     }
                     appendLine(
                         """
