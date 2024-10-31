@@ -128,6 +128,22 @@ internal object ArgumentManager {
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.booleanResolved.isAssignableFrom(type)
     }
 
+    object ListArgument: Argument {
+        override fun resolve(
+            index: Int,
+            builder: StringBuilder,
+            declaredClass: KSClassDeclaration,
+            param: KSValueParameter?
+        ): Int {
+            super.resolve(index, builder, declaredClass, param)
+            builder.append(".toList($index)")
+            return 1
+        }
+
+        override fun isValid(type: KSType, param: KSValueParameter?)
+            = parResolved.listResolved.isAssignableFrom(type)
+    }
+
     object LuaValueArgument : Argument {
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.luaValueResolved.isAssignableFrom(type)
     }
@@ -188,6 +204,7 @@ internal object ArgumentManager {
         DoubleArgument,
         FloatArgument,
         BooleanArgument,
+        ListArgument,
         LuaValueArgument,
         EngineArgument,
         JavaObjectArgument
