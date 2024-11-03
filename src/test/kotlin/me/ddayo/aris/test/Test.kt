@@ -1,9 +1,6 @@
 package me.ddayo.aris.test
 
-import me.ddayo.aris.CoroutineProvider
-import me.ddayo.aris.ILuaStaticDecl
-import me.ddayo.aris.LuaEngine
-import me.ddayo.aris.LuaMultiReturn
+import me.ddayo.aris.*
 import me.ddayo.aris.gen.TestGenerated.Test1_LuaGenerated
 import me.ddayo.aris.gen.TestGenerated.Test2_LuaGenerated
 import me.ddayo.aris.gen.TestGenerated.TestAris_LuaGenerated
@@ -28,6 +25,11 @@ open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
         println(instance.get().type())
         instance.push(5)
         instance.setGlobal("test1")
+    }
+
+    @LuaFunction
+    fun hook(func: LuaFunc) {
+        func.call(1, 2, 3)
     }
 
     var a = 0
@@ -148,6 +150,7 @@ fun main() {
             print("Aris: " .. getNano() - n)
             
             local t = create_test2()
+            t:hook(function(a, b, c) print("A: " .. a .. ", " .. b .. ", " .. c) end)
             t:f2()
             t:f1(13)
             local t2 = create_test1()

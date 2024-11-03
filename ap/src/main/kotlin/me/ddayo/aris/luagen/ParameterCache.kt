@@ -21,6 +21,7 @@ internal data class ParameterCache(
     val unitResolved: KSType,
     val luaValueResolved: KSType,
     val coroutineResolved: KSType,
+    val luaFuncResolved: KSType,
     val staticDeclResolved: KSType
 ) {
     companion object {
@@ -42,6 +43,7 @@ internal data class ParameterCache(
             resolver.getClassDeclarationByName("party.iroiro.luajava.value.LuaValue")!!.asStarProjectedType(),
             resolver.getClassDeclarationByName("me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration")!!
                 .asStarProjectedType(),
+            resolver.getClassDeclarationByName("me.ddayo.aris.LuaFunc")!!.asStarProjectedType(),
             resolver.getClassDeclarationByName("me.ddayo.aris.ILuaStaticDecl")!!.asStarProjectedType(),
         )
     }

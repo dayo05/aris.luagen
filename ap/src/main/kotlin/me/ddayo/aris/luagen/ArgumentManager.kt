@@ -144,10 +144,6 @@ internal object ArgumentManager {
             = parResolved.listResolved.isAssignableFrom(type)
     }
 
-    object LuaValueArgument : Argument {
-        override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.luaValueResolved.isAssignableFrom(type)
-    }
-
     object EngineArgument : Argument {
         @OptIn(KspExperimental::class)
         override fun isValid(type: KSType, param: KSValueParameter?) = param?.getAnnotationsByType(LuaInstance::class)?.any() == true
@@ -160,6 +156,20 @@ internal object ArgumentManager {
         ): Int {
             builder.append("lua")
             return 0
+        }
+    }
+
+    object LuaFuncArgument : Argument {
+        override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.luaFuncResolved.isAssignableFrom(type)
+
+        override fun resolve(
+            index: Int,
+            builder: StringBuilder,
+            declaredClass: KSClassDeclaration,
+            param: KSValueParameter?
+        ): Int {
+            builder.append("LuaFunc(lua, $index)")
+            return 1
         }
     }
 
@@ -205,7 +215,7 @@ internal object ArgumentManager {
         FloatArgument,
         BooleanArgument,
         ListArgument,
-        LuaValueArgument,
+        LuaFuncArgument,
         EngineArgument,
         JavaObjectArgument
     )

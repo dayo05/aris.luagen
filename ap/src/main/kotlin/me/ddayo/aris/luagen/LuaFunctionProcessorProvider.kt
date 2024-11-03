@@ -407,8 +407,7 @@ import me.ddayo.aris.LuaMultiReturn
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 import me.ddayo.aris.LuaMain.push
-import me.ddayo.aris.ILuaStaticDecl
-import me.ddayo.aris.LuaMain
+import me.ddayo.aris.*
 
 object $clName {"""
                         )
