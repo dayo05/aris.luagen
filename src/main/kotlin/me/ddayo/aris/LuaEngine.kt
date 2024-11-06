@@ -139,6 +139,11 @@ open class LuaEngine(protected val lua: Lua) {
             tasks.remove(this)
         }
 
+        fun restart() {
+            coroutine.close()
+            init()
+        }
+
         @LuaFunction("get_task_name")
         @JvmName("get_name")
         fun getName() = name
