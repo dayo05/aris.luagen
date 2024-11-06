@@ -108,7 +108,7 @@ open class LuaEngine(protected val lua: Lua) {
         private fun resume(arg: Int) {
             try {
                 taskStatus = TaskStatus.RUNNING
-                if (coroutine.resume(arg)) {
+                if (!coroutine.resume(arg)) {
                     coroutine.close()
                     if (repeat) {
                         init()
