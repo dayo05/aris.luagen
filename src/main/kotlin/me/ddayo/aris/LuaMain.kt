@@ -4,7 +4,7 @@ import me.ddayo.aris.gen.LuaGenerated
 import party.iroiro.luajava.Lua
 
 object LuaMain {
-    fun <T> push(lua: Lua, it: T): Int {
+    inline fun <reified T> push(lua: Lua, it: T): Int {
         when (it) {
             null -> {
                 lua.pushNil()

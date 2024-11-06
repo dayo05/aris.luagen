@@ -8,146 +8,152 @@ import com.google.devtools.ksp.symbol.KSValueParameter
 import me.ddayo.aris.luagen.LuaFunctionProcessorProvider.Companion.parResolved
 
 internal object ArgumentManager {
-    object StringArgument : Argument {
+    class VarargArgument : Argument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            super.resolve(index, builder, declaredClass, param)
-            builder.append(".toString($index) ?: \"null\"")
-            return 1
+            TODO()
+            return -1
+        }
+
+        override fun isValid(type: KSType, param: KSValueParameter?) = param?.isVararg == true
+    }
+
+    class StringArgument : Argument() {
+        override fun resolve(
+            index: Int,
+            builder: StringBuilder,
+            declaredClass: KSClassDeclaration,
+            param: KSValueParameter?
+        ): Int {
+            builder.append("lua.toString($index) ?: \"null\"")
+            return index + 1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.stringResolved.isAssignableFrom(type)
     }
 
-    object LongArgument : Argument {
+    open class LongArgument : Argument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            super.resolve(index, builder, declaredClass, param)
-            builder.append(".toInteger($index)")
-            return 1
+            builder.append("lua.toInteger($index)")
+            return index + 1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.longResolved.isAssignableFrom(type)
     }
 
-    object IntArgument : Argument {
+    class IntArgument : LongArgument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            LongArgument.resolve(index, builder, declaredClass, param)
+            super.resolve(index, builder, declaredClass, param)
             builder.append(".toInt()")
-            return 1
+            return index + 1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.intResolved.isAssignableFrom(type)
     }
 
-    object ShortArgument : Argument {
+    class ShortArgument : LongArgument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            LongArgument.resolve(index, builder, declaredClass, param)
+            super.resolve(index, builder, declaredClass, param)
             builder.append(".toShort()")
-            return 1
+            return index + 1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.shortResolved.isAssignableFrom(type)
     }
 
-    object ByteArgument : Argument {
+    class ByteArgument : LongArgument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            LongArgument.resolve(index, builder, declaredClass, param)
+            super.resolve(index, builder, declaredClass, param)
             builder.append(".toByte()")
-            return 1
+            return index + 1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.byteResolved.isAssignableFrom(type)
     }
 
-    object DoubleArgument : Argument {
+    open class DoubleArgument : Argument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            super.resolve(index, builder, declaredClass, param)
-            builder.append(".toNumber($index)")
-            return 1
+            builder.append("lua.toNumber($index)")
+            return index + 1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.doubleResolved.isAssignableFrom(type)
     }
 
-    object FloatArgument : Argument {
+    class FloatArgument : DoubleArgument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            DoubleArgument.resolve(index, builder, declaredClass, param)
+            super.resolve(index, builder, declaredClass, param)
             builder.append(".toFloat()")
-            return 1
+            return index + 1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.floatResolved.isAssignableFrom(type)
     }
 
-    object BooleanArgument: Argument {
+    class BooleanArgument : Argument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            super.resolve(index, builder, declaredClass, param)
-            builder.append(".toBoolean($index)")
-            return 1
+            builder.append("lua.toBoolean($index)")
+            return index + 1
         }
 
-        override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.booleanResolved.isAssignableFrom(type)
+        override fun isValid(type: KSType, param: KSValueParameter?) =
+            parResolved.booleanResolved.isAssignableFrom(type)
     }
 
-    object ListArgument: Argument {
+    class ListArgument : Argument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            super.resolve(index, builder, declaredClass, param)
-            builder.append(".toList($index)")
-            return 1
+            builder.append("lua.toList($index)")
+            return index + 1
         }
 
-        override fun isValid(type: KSType, param: KSValueParameter?)
-            = parResolved.listResolved.isAssignableFrom(type)
+        override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.listResolved.isAssignableFrom(type)
     }
 
-    object EngineArgument : Argument {
-        @OptIn(KspExperimental::class)
-        override fun isValid(type: KSType, param: KSValueParameter?) = param?.getAnnotationsByType(LuaInstance::class)?.any() == true
-
+    class EngineArgument : Argument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
@@ -155,13 +161,15 @@ internal object ArgumentManager {
             param: KSValueParameter?
         ): Int {
             builder.append("lua")
-            return 0
+            return index
         }
+
+        @OptIn(KspExperimental::class)
+        override fun isValid(type: KSType, param: KSValueParameter?) =
+            param?.getAnnotationsByType(LuaInstance::class)?.any() == true
     }
 
-    object LuaFuncArgument : Argument {
-        override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.luaFuncResolved.isAssignableFrom(type)
-
+    class LuaFuncArgument : Argument() {
         override fun resolve(
             index: Int,
             builder: StringBuilder,
@@ -169,32 +177,107 @@ internal object ArgumentManager {
             param: KSValueParameter?
         ): Int {
             builder.append("LuaFunc(lua, $index)")
-            return 1
+            return index + 1
         }
+
+        override fun isValid(type: KSType, param: KSValueParameter?) =
+            parResolved.luaFuncResolved.isAssignableFrom(type)
     }
 
-    object JavaObjectArgument : Argument {
+    class JavaObjectArgument : Argument() {
+        private var initStackPos = -1
+        override fun init(builder: StringBuilder, currentStackPos: Int): Int {
+            initStackPos = currentStackPos
+            builder.appendLine("lua.refGet(LuaMain._luaGlobalMt)")
+            return currentStackPos + 1
+        }
+
+        override fun preProcess(builder: StringBuilder, currentIndex: Int, currentStackPos: Int, param: KSValueParameter?): Int {
+            builder.appendLine("lua.getMetatable($currentIndex)")
+            builder.appendLine("lua.pushValue(-${currentStackPos - initStackPos + 1})")
+            builder.appendLine("lua.setMetatable($currentIndex)")
+            return currentStackPos + 1
+        }
+
         override fun resolve(
             index: Int,
             builder: StringBuilder,
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            super.resolve(index, builder, declaredClass, param)
-            builder.append(".toJavaObject($index) as ${intoProjectedStr(declaredClass)}")
-            return 1
+            builder.append("lua.toJavaObject($index) as ${intoProjectedStr(declaredClass)}")
+            return index + 1
+        }
+
+        override fun postProcess(
+            builder: StringBuilder,
+            currentIndex: Int,
+            currentStackPos: Int,
+            param: KSValueParameter?
+        ): Int {
+            builder.appendLine("lua.setMetatable($currentIndex)")
+            return currentStackPos - 1
+        }
+
+        override fun finish(builder: StringBuilder, currentStackPos: Int): Int {
+            builder.appendLine("lua.pop(1)")
+            return currentStackPos - 1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = true
     }
 
-    interface Argument {
-        fun resolve(index: Int, builder: StringBuilder, declaredClass: KSClassDeclaration, param: KSValueParameter?): Int {
-            builder.append("lua")
-            return 1
+    abstract class Argument {
+        open fun init(builder: StringBuilder, currentStackPos: Int): Int {
+            return currentStackPos
         }
 
-        fun isValid(type: KSType, param: KSValueParameter?): Boolean
+        open fun preProcess(builder: StringBuilder, currentIndex: Int, currentStackPos: Int, param: KSValueParameter?): Int {
+            return currentStackPos
+        }
+
+        abstract fun resolve(
+            index: Int,
+            builder: StringBuilder,
+            declaredClass: KSClassDeclaration,
+            param: KSValueParameter?
+        ): Int
+
+        open fun postProcess(builder: StringBuilder, currentIndex: Int, currentStackPos: Int, param: KSValueParameter?): Int {
+            return currentStackPos
+        }
+
+        open fun finish(builder: StringBuilder, currentStackPos: Int): Int {
+            return currentStackPos
+        }
+
+        private var isProcessed = false
+
+        fun process(
+            preBuilder: StringBuilder,
+            mainBuilder: StringBuilder,
+            postBuilder: StringBuilder,
+            currentStackValuePos: Int,
+            currentStackIncrementPos: Int,
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration
+        ): Pair<Int, Int> {
+            var nsp = currentStackIncrementPos
+            if (!isProcessed)
+                nsp = init(preBuilder, nsp)
+            nsp = preProcess(preBuilder, currentStackValuePos, nsp, param)
+            val postProc = nsp
+            val newIndex = resolve(currentStackValuePos, mainBuilder, declaredClass, param)
+            nsp = postProcess(postBuilder, currentStackValuePos, nsp, param)
+            if (!isProcessed)
+                nsp = finish(postBuilder, nsp)
+            if (nsp != currentStackIncrementPos)
+                throw IllegalStateException("Stack Overflow Expected nsp: $nsp != stackPos: $currentStackIncrementPos at index $currentStackValuePos")
+            isProcessed = true
+            return newIndex to postProc
+        }
+
+        abstract fun isValid(type: KSType, param: KSValueParameter?): Boolean
     }
 
     fun intoProjectedStr(classDecl: KSClassDeclaration): String {
@@ -205,18 +288,20 @@ internal object ArgumentManager {
         return s.toString()
     }
 
-    val argFilters = listOf(
-        StringArgument,
-        LongArgument,
-        IntArgument,
-        ShortArgument,
-        ByteArgument,
-        DoubleArgument,
-        FloatArgument,
-        BooleanArgument,
-        ListArgument,
-        LuaFuncArgument,
-        EngineArgument,
-        JavaObjectArgument
-    )
+    val argFilters
+        get() = listOf(
+            VarargArgument(),
+            StringArgument(),
+            LongArgument(),
+            IntArgument(),
+            ShortArgument(),
+            ByteArgument(),
+            DoubleArgument(),
+            FloatArgument(),
+            BooleanArgument(),
+            ListArgument(),
+            LuaFuncArgument(),
+            EngineArgument(),
+            JavaObjectArgument()
+        )
 }

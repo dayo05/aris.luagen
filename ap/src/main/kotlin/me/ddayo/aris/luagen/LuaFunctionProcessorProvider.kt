@@ -11,7 +11,6 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
     private class BindTargetKt(
         val funcCall: KSFunctionDeclaration, val declaredClass: KSClassDeclaration?, val isPrivate: Boolean
     ) {
-        val isStatic = declaredClass == null
         val returnResolved = funcCall.returnType?.resolve()
         val returnName = returnResolved?.declaration?.qualifiedName?.asString()
         val isCoroutine = returnName == "me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration"
@@ -19,72 +18,96 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         val ptResolved: MutableList<Pair<KSValueParameter?, KSType>> =
             funcCall.parameters.map { it to it.type.resolve() }.toMutableList()
 
-        init {
-            declaredClass?.let { ptResolved.add(0, null to it.asStarProjectedType()) }
-        }
-
         val signature =
             funcCall.parameters.joinToString(", ") { "${it.name?.asString()}: ${it.type.resolve().declaration.simpleName.asString()}" }
         val doc = funcCall.docString
 
-        var argPtr = 1
-        val ptStr = ptResolved.map {
-            StringBuilder().apply {
-                argPtr += ArgumentManager.argFilters.firstOrNull { filter -> filter.isValid(it.second, it.first) }!!
-                    .resolve(argPtr, this, it.second.declaration as KSClassDeclaration, it.first)
+        val processor = ArgumentManager.argFilters
+
+        val preBuilder = StringBuilder()
+        val mainBuilder = StringBuilder()
+        var postBuilder = StringBuilder()
+
+        private var svp = 1
+        private var sip = 1
+        fun proc(type: KSType, vp: KSValueParameter?) {
+            val _postBuilder = StringBuilder()
+            val p = processor.first { it.isValid(type, vp) }
+                .process(
+                    preBuilder,
+                    mainBuilder,
+                    _postBuilder,
+                    svp,
+                    sip,
+                    vp,
+                    type.declaration as KSClassDeclaration
+                )
+            postBuilder = _postBuilder.append(postBuilder)
+            svp = p.first
+            sip = p.second
+        }
+
+        init {
+            if (returnResolved?.let { parResolved.unitResolved.isAssignableFrom(it) } == false)
+                mainBuilder.append("val rt = ")
+
+            declaredClass?.let { cl ->
+                mainBuilder.append("(")
+                val ty = cl.asStarProjectedType()
+                proc(ty, null)
+                mainBuilder.append(").")
+                    .append(funcCall.simpleName.asString())
+            } ?: run {
+                mainBuilder.append(funcCall.qualifiedName!!.asString())
             }
+            mainBuilder.append("(")
+            if (ptResolved.isNotEmpty()) {
+                ptResolved.forEachIndexed { index, (vp, type) ->
+                    if(index != 0) mainBuilder.append(", ")
+                    proc(type, vp)
+                }
+            }
+            mainBuilder.append(")")
         }
 
         val ktCallString = StringBuilder().apply {
-
-            val invStr = ptStr.let {
-                if (!isStatic) it.drop(1)
-                else it
-            }.joinToString(", ")
-
             appendLine("lua.push { lua ->")
 
-            val ll = mutableListOf<Int>()
-            var pushed = false
-            if (argPtr != 0) {
-                // determine to replace metatable
-                if (ptResolved.any { parResolved.staticDeclResolved.isAssignableFrom(it.second) }) {
-                    pushed = true
-                    // appendLine("lua.getGlobal(\"aris__obj_mt\")")
-                    appendLine("lua.refGet(LuaMain._luaGlobalMt)")
-                    ptResolved.forEachIndexed { index, ksType ->
-                        if (parResolved.staticDeclResolved.isAssignableFrom(ksType.second)) ll.add(index + 1)
+            appendLine(preBuilder)
+            appendLine(mainBuilder)
+            appendLine(postBuilder)
+
+            if (svp > 1)
+                appendLine("lua.pop(${svp - 1})")
+
+            val returnNullable = returnResolved?.nullability == Nullability.NULLABLE
+            fun handleNullable(str: String) = if (returnNullable) "rt?.let { rt -> $str } ?: lua.pushNil()" else str
+
+            returnResolved?.let {
+                when {
+                    parResolved.unitResolved.isAssignableFrom(it) -> appendLine("return@push 0")
+                    parResolved.numberResolved.isAssignableFrom(it)
+                            || parResolved.stringResolved.isAssignableFrom(it)
+                            || parResolved.booleanResolved.isAssignableFrom(it) -> {
+                        appendLine(handleNullable("lua.push(rt)"))
+                        appendLine("return@push 1")
                     }
 
-                    ll.forEachIndexed { index, v ->
-                        appendLine("lua.getMetatable($v)")
-                        appendLine("lua.pushValue(-${index + 2})")
-                        appendLine("lua.setMetatable($v)")
+                    parResolved.staticDeclResolved.isAssignableFrom(it) -> {
+                        appendLine(handleNullable("lua.pushJavaObject(rt)\nrt.toLua(lua)"))
+                        appendLine("return@push 1")
                     }
+
+                    else -> appendLine("return@push push(lua, rt)")
                 }
-            }
-
-            if (isStatic) appendLine("val rt = ${funcCall.qualifiedName!!.asString()}($invStr)")
-            else appendLine("val rt = (${ptStr[0]}).${funcCall.simpleName.asString()}($invStr)")
-
-            if (ll.isNotEmpty())
-                ((ll.size - 1) downTo 0).forEach {
-                    appendLine("lua.setMetatable(${ll[it]})")
-                }
-
-            if (pushed)
-                appendLine("lua.pop(1)")
-
-            appendLine("lua.pop(${argPtr - 1})")
-
-            appendLine("return@push push(lua, rt)")
+            } ?: run { appendLine("return@push 0") }
             appendLine("}")
         }
 
         fun scoreCalcLua(fnName: String) = StringBuilder().apply {
             appendLine(
                 """
-if table_size >= ${argPtr - if (isStatic) 1 else 2} then
+if table_size >= ${svp - 1} then
     local task_score = 0
     if task_score >= score then
         score = task_score
