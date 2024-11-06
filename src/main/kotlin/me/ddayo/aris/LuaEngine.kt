@@ -7,6 +7,38 @@ import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 
 open class LuaEngine(protected val lua: Lua) {
+    enum class TaskStatus {
+        /**
+         * Task loaded to lua engine but never executed yet
+         */
+        INITIALIZED,
+
+        /**
+         * Task failed to loaded
+         */
+        LOAD_ERROR,
+
+        /**
+         * Runtime exception thrown
+         */
+        RUNTIME_ERROR,
+
+        /**
+         * Task is running. This is available for multithreaded environment(unstable)
+         */
+        RUNNING,
+
+        /**
+         * Task is yielded
+         */
+        YIELDED,
+
+        /**
+         * Task is ended
+         */
+        FINISHED
+    }
+
     init {
         LuaMain.initLua(lua)
     }
@@ -14,12 +46,12 @@ open class LuaEngine(protected val lua: Lua) {
     val tasks = mutableListOf<LuaTask>()
 
     fun loop() {
-        val toRemove = mutableListOf<LuaTask>()
-        for (task in tasks) {
+        for (task in tasks)
             task.loop()
-            if (!task.running) toRemove.add(task)
-        }
-        tasks.removeAll(toRemove)
+    }
+
+    fun removeAllFinished() {
+        tasks.removeAll { it.taskStatus == TaskStatus.FINISHED }
     }
 
     open fun createTask(code: String, name: String, repeat: Boolean = false) =
@@ -30,8 +62,9 @@ open class LuaEngine(protected val lua: Lua) {
         ILuaStaticDecl by LuaTask_LuaGenerated {
         val engine = this@LuaEngine
 
-        var running = false
-            private set
+        var taskStatus = TaskStatus.INITIALIZED
+            protected set
+
         private lateinit var coroutine: Lua
         private val refIdx: Int // function to executed inside coroutine
 
@@ -40,32 +73,30 @@ open class LuaEngine(protected val lua: Lua) {
         var errorMessage: StringBuilder = StringBuilder()
             private set
 
-        val isValid = try {
-            lua.load(
-                """return function(task)
+        init {
+            if (try {
+                    lua.load(
+                        """return function(task)
             |    $code
             |end""".trimMargin()
-            )
-            true
-        } catch (e: LuaException) {
-            errorMessage.append(e.message)
-            false
-        }
-
-        init {
-            if (isValid) {
+                    )
+                    true
+                } catch (e: LuaException) {
+                    taskStatus = TaskStatus.LOAD_ERROR
+                    errorMessage.append(e.message)
+                    false
+                }
+            ) {
                 lua.pCall(0, 1)
                 refIdx = lua.ref()
                 init()
             } else refIdx = -1
         }
 
-        private var isInitialLoop = false
-
         private fun init() {
             coroutine = lua.newThread()
             coroutine.refGet(refIdx) // code
-            isInitialLoop = true
+            taskStatus = TaskStatus.INITIALIZED
         }
 
         fun pullError(): StringBuilder {
@@ -74,29 +105,29 @@ open class LuaEngine(protected val lua: Lua) {
             return s
         }
 
+        private fun resume(arg: Int) {
+            try {
+                taskStatus = TaskStatus.RUNNING
+                if (coroutine.resume(arg)) {
+                    coroutine.close()
+                    if (repeat) {
+                        init()
+                    } else taskStatus = TaskStatus.FINISHED
+                } else taskStatus = TaskStatus.YIELDED
+            } catch (e: LuaException) {
+                errorMessage.appendLine(e.message)
+                taskStatus = TaskStatus.RUNTIME_ERROR
+            }
+        }
+
         fun loop() {
-            if (!isValid) return
-
-            running = true
             if (isPaused) return
-
-            if (isInitialLoop) {
+            if (taskStatus == TaskStatus.INITIALIZED) {
                 coroutine.pushJavaObject(this)
                 toLua(coroutine)
-            }
-            if (try {
-                    !coroutine.resume(if (isInitialLoop) 1 else 0)
-                } catch (e: LuaException) {
-                    errorMessage.appendLine(e.message)
-                    true
-                }
-            ) {
-                coroutine.close()
-                if (repeat) {
-                    init()
-                } else running = false
-                return
-            }
+                resume(1)
+            } else if (taskStatus == TaskStatus.YIELDED)
+                resume(0)
         }
 
         // unref code on Java object has been collected by GC
