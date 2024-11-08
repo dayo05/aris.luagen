@@ -113,7 +113,7 @@ object SpeedTest {
     fun getNano() = System.nanoTime()
 }
 
-class TestEngine(lua: Lua) : LuaEngine(lua) {
+class TestEngine(lua: Lua) : LuaEngine(lua, false) {
     init {
         TestGenerated.initLua(lua)
     }
@@ -132,11 +132,11 @@ fun main() {
             
             print("begin")
             
-            -- local ep = 10000000
+            local ep = 10000000
             -- Original: 11220988583
             --     Aris: 10608901500
             
-            local ep = 100
+            -- local ep = 100
             -- Original: 2412125
             --     Aris: 402875
             local n

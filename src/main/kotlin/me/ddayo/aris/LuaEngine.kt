@@ -5,8 +5,9 @@ import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
+import party.iroiro.luajava.luajit.LuaJitNatives
 
-open class LuaEngine(protected val lua: Lua) {
+open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = true) {
     enum class TaskStatus {
         /**
          * Task loaded to lua engine but never executed yet
@@ -45,9 +46,18 @@ open class LuaEngine(protected val lua: Lua) {
 
     val tasks = mutableListOf<LuaTask>()
 
+    var loopCount = 0L
+        private set
+
     fun loop() {
         for (task in tasks)
             task.loop()
+        loopCount++
+    }
+
+    private var lastLoop = -1L
+    fun testInfinite() = (lastLoop == loopCount).also {
+        lastLoop = loopCount
     }
 
     fun removeAllFinished() {
@@ -74,12 +84,21 @@ open class LuaEngine(protected val lua: Lua) {
             private set
 
         init {
+            val codeBuilder = StringBuilder()
+            codeBuilder.append("return function(task)")
+            if(preventInfinityLoop)
+                codeBuilder.append("""
+    debug.sethook(function()
+        if task:test_execution() then 
+            error("Infinite loop detected!! Please yield frequently.") 
+        end 
+    end, "", 1000000)
+                """.trimIndent())
+            codeBuilder.appendLine(code)
+            codeBuilder.append("end")
+
             if (try {
-                    lua.load(
-                        """return function(task)
-            |    $code
-            |end""".trimMargin()
-                    )
+                    lua.load(codeBuilder.toString().trimMargin())
                     true
                 } catch (e: LuaException) {
                     taskStatus = TaskStatus.LOAD_ERROR
@@ -93,9 +112,13 @@ open class LuaEngine(protected val lua: Lua) {
             } else refIdx = -1
         }
 
+        private var resumeParam = 0
         private fun init() {
             coroutine = lua.newThread()
             coroutine.refGet(refIdx) // code
+            coroutine.pushJavaObject(this)
+            toLua(coroutine)
+            resumeParam = 1
             taskStatus = TaskStatus.INITIALIZED
         }
 
@@ -122,12 +145,9 @@ open class LuaEngine(protected val lua: Lua) {
 
         fun loop() {
             if (isPaused) return
-            if (taskStatus == TaskStatus.INITIALIZED) {
-                coroutine.pushJavaObject(this)
-                toLua(coroutine)
-                resume(1)
-            } else if (taskStatus == TaskStatus.YIELDED)
-                resume(0)
+            if (taskStatus != TaskStatus.YIELDED && taskStatus != TaskStatus.INITIALIZED) return
+            resume(resumeParam)
+            resumeParam = 0
         }
 
         // unref code on Java object has been collected by GC
@@ -147,5 +167,8 @@ open class LuaEngine(protected val lua: Lua) {
         @LuaFunction("get_task_name")
         @JvmName("get_name")
         fun getName() = name
+
+        @LuaFunction("test_execution")
+        fun testExecution() = engine.testInfinite()
     }
 }
