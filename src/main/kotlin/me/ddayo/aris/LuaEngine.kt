@@ -117,7 +117,7 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
             coroutine = lua.newThread()
             coroutine.refGet(refIdx) // code
             coroutine.pushJavaObject(this)
-            toLua(coroutine)
+            LuaTask_LuaGenerated.toLua(coroutine)
             resumeParam = 1
             taskStatus = TaskStatus.INITIALIZED
         }
