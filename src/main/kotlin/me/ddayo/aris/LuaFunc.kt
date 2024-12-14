@@ -15,12 +15,13 @@ class LuaFunc(private val lua: Lua, loc: Int = -1) {
         lua.refGet(ref)
 
         var a = 0
-        for (x in values) a += LuaMain.push(lua, x)
+        for (x in values) a += LuaMain.pushNoInline(lua, x)
 
         lua.pCall(a, 0)
     }
 
     fun finalize() {
-        lua.unref(ref)
+        // commented because this may execute on other thread
+        // lua.unref(ref)
     }
 }

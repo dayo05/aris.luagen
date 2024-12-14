@@ -4,6 +4,51 @@ import me.ddayo.aris.gen.LuaGenerated
 import party.iroiro.luajava.Lua
 
 object LuaMain {
+    fun pushNoInline(lua: Lua, it: Any?): Int {
+        when (it) {
+            null -> {
+                lua.pushNil()
+                return 1
+            }
+            is Number -> {
+                lua.push(it)
+                return 1
+            }
+            is Boolean -> {
+                lua.push(it)
+                return 1
+            }
+            is String -> {
+                lua.push(it)
+                return 1
+            }
+            is Map<*, *> -> {
+                lua.push(it)
+                return 1
+            }
+            is Class<*> -> {
+                lua.pushJavaClass(it)
+                return 1
+            }
+            is ILuaStaticDecl -> {
+                lua.pushJavaObject(it)
+                it.toLua(lua)
+                return 1
+            }
+            is LuaMultiReturn -> {
+                it.luaFn(lua)
+                return it.size
+            }
+            is Unit -> {
+                return 0
+            }
+            else -> {
+                lua.pushJavaObject(it as Any)
+                return 1
+            }
+        }
+    }
+
     inline fun <reified T> push(lua: Lua, it: T): Int {
         when (it) {
             null -> {
