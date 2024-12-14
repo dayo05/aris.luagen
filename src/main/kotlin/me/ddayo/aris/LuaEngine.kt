@@ -7,7 +7,7 @@ import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 import party.iroiro.luajava.luajit.LuaJitNatives
 
-open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = true) {
+open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = true, private val errorMessageHandler: (s: String) -> Unit = {}) {
     enum class TaskStatus {
         /**
          * Task loaded to lua engine but never executed yet
@@ -80,9 +80,6 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
 
         open var isPaused = false
 
-        var errorMessage: StringBuilder = StringBuilder()
-            private set
-
         init {
             val codeBuilder = StringBuilder()
             codeBuilder.append("return function(task)")
@@ -102,7 +99,7 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
                     true
                 } catch (e: LuaException) {
                     taskStatus = TaskStatus.LOAD_ERROR
-                    errorMessage.append(e.message)
+                    errorMessageHandler((e.message ?: "No message provided") + "\n" + e.stackTraceToString())
                     false
                 }
             ) {
@@ -122,12 +119,6 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
             taskStatus = TaskStatus.INITIALIZED
         }
 
-        fun pullError(): StringBuilder {
-            val s = errorMessage
-            errorMessage = StringBuilder()
-            return s
-        }
-
         private fun resume(arg: Int) {
             try {
                 taskStatus = TaskStatus.RUNNING
@@ -138,7 +129,7 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
                     } else taskStatus = TaskStatus.FINISHED
                 } else taskStatus = TaskStatus.YIELDED
             } catch (e: LuaException) {
-                errorMessage.appendLine(e.message)
+                errorMessageHandler((e.message ?: "No message provided") + "\n" + e.stackTraceToString())
                 taskStatus = TaskStatus.RUNTIME_ERROR
             }
         }
