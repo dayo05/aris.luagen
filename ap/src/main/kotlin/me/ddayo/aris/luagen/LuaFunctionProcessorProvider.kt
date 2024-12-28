@@ -459,6 +459,7 @@ object $clName {"""
                         write(ktCode)
                         close()
                     }
+                    /*
                     if (environment.options["export_lua"] == "true") environment.codeGenerator.createNewFileByPath(
                         Dependencies(false), clName, "lua"
                     ).writer().apply {
@@ -471,6 +472,7 @@ object $clName {"""
                         write(cls.joinToString("\n\n") { it.docStrings })
                         close()
                     }
+                     */
                 }
             }
         }
