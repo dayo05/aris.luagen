@@ -8,19 +8,15 @@ import com.google.devtools.ksp.symbol.*
 
 
 class LuaFunctionProcessorProvider : SymbolProcessorProvider {
-    private class BindTargetKt(
-        val funcCall: KSFunctionDeclaration, val declaredClass: KSClassDeclaration?, val isPrivate: Boolean
+    private abstract class AbstractBindTarget(
+        val luaTargetName: String,
+        val declaredClass: KSClassDeclaration?,
+        val isPrivate: Boolean
     ) {
-        val returnResolved = funcCall.returnType?.resolve()
-        val returnName = returnResolved?.declaration?.qualifiedName?.asString()
-        val isCoroutine = returnName == "me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration"
-
-        val ptResolved: MutableList<Pair<KSValueParameter?, KSType>> =
-            funcCall.parameters.map { it to it.type.resolve() }.toMutableList()
-
-        val signature =
-            funcCall.parameters.joinToString(", ") { "${it.name?.asString()}: ${it.type.resolve().declaration.simpleName.asString()}" }
-        val doc = funcCall.docString
+        abstract val returnResolved: KSType?
+        val returnName by lazy { returnResolved?.declaration?.qualifiedName?.asString() }
+        val isCoroutine by lazy { returnName == "me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration" }
+        open val doc = StringBuilder()
 
         val processor = ArgumentManager.argFilters
 
@@ -30,7 +26,13 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
         private var svp = 1
         private var sip = 1
-        fun proc(type: KSType, vp: KSValueParameter?) {
+
+        /**
+         * Append processed string to matching KSValueParameter into each builder
+         * @param type type to append
+         * @param vp actual KSValueParameter to append. this can be null if this mentions `this`
+         */
+        protected fun proc(type: KSType, vp: KSValueParameter?) {
             val _postBuilder = StringBuilder()
             val p = processor.first { it.isValid(type, vp) }
                 .process(
@@ -47,61 +49,40 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
             sip = p.second
         }
 
-        init {
-            if (returnResolved?.let { parResolved.unitResolved.isAssignableFrom(it) } == false)
-                mainBuilder.append("val rt = ")
+        val ktCallString by lazy {
+            StringBuilder().apply {
+                appendLine("lua.push { lua ->")
 
-            declaredClass?.let { cl ->
-                mainBuilder.append("(")
-                val ty = cl.asStarProjectedType()
-                proc(ty, null)
-                mainBuilder.append(").")
-                    .append(funcCall.simpleName.asString())
-            } ?: run {
-                mainBuilder.append(funcCall.qualifiedName!!.asString())
-            }
-            mainBuilder.append("(")
-            if (ptResolved.isNotEmpty()) {
-                ptResolved.forEachIndexed { index, (vp, type) ->
-                    if(index != 0) mainBuilder.append(", ")
-                    proc(type, vp)
-                }
-            }
-            mainBuilder.append(")")
-        }
+                appendLine(preBuilder)
+                appendLine(mainBuilder)
+                appendLine(postBuilder)
 
-        val ktCallString = StringBuilder().apply {
-            appendLine("lua.push { lua ->")
+                if (svp > 1)
+                    appendLine("lua.pop(${svp - 1})")
 
-            appendLine(preBuilder)
-            appendLine(mainBuilder)
-            appendLine(postBuilder)
+                val returnNullable = returnResolved?.nullability == Nullability.NULLABLE
+                fun handleNullable(str: String) = if (returnNullable) "rt?.let { rt -> $str } ?: lua.pushNil()" else str
 
-            if (svp > 1)
-                appendLine("lua.pop(${svp - 1})")
+                returnResolved?.let {
+                    when {
+                        parResolved.unitResolved.isAssignableFrom(it) -> appendLine("return@push 0")
+                        parResolved.numberResolved.isAssignableFrom(it)
+                                || parResolved.stringResolved.isAssignableFrom(it)
+                                || parResolved.booleanResolved.isAssignableFrom(it) -> {
+                            appendLine(handleNullable("lua.push(rt)"))
+                            appendLine("return@push 1")
+                        }
 
-            val returnNullable = returnResolved?.nullability == Nullability.NULLABLE
-            fun handleNullable(str: String) = if (returnNullable) "rt?.let { rt -> $str } ?: lua.pushNil()" else str
+                        parResolved.staticDeclResolved.isAssignableFrom(it) -> {
+                            appendLine(handleNullable("lua.pushJavaObject(rt)\nrt.toLua(lua)"))
+                            appendLine("return@push 1")
+                        }
 
-            returnResolved?.let {
-                when {
-                    parResolved.unitResolved.isAssignableFrom(it) -> appendLine("return@push 0")
-                    parResolved.numberResolved.isAssignableFrom(it)
-                            || parResolved.stringResolved.isAssignableFrom(it)
-                            || parResolved.booleanResolved.isAssignableFrom(it) -> {
-                        appendLine(handleNullable("lua.push(rt)"))
-                        appendLine("return@push 1")
+                        else -> appendLine("return@push push(lua, rt)")
                     }
-
-                    parResolved.staticDeclResolved.isAssignableFrom(it) -> {
-                        appendLine(handleNullable("lua.pushJavaObject(rt)\nrt.toLua(lua)"))
-                        appendLine("return@push 1")
-                    }
-
-                    else -> appendLine("return@push push(lua, rt)")
-                }
-            } ?: run { appendLine("return@push 0") }
-            appendLine("}")
+                } ?: run { appendLine("return@push 0") }
+                appendLine("}")
+            }
         }
 
         fun scoreCalcLua(fnName: String) = StringBuilder().apply {
@@ -134,8 +115,131 @@ end
         }
     }
 
+    private class BindTargetFnKt(
+        luaTargetName: String,
+        val funcCall: KSFunctionDeclaration,
+        declaredClass: KSClassDeclaration?,
+        isPrivate: Boolean
+    ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
+        override val returnResolved = funcCall.returnType?.resolve()
+
+        val ptResolved: MutableList<Pair<KSValueParameter?, KSType>> =
+            funcCall.parameters.map { it to it.type.resolve() }.toMutableList()
+
+        val docSignature =
+            funcCall.parameters.joinToString(", ") { "${it.name?.asString()}: ${it.type.resolve().declaration.simpleName.asString()}" }
+
+        // override val doc = funcCall.docString ?: ""
+        override val doc = StringBuilder().apply {
+            if (declaredClass == null) appendLine("## $luaTargetName(${docSignature})")
+            else appendLine("## ${declaredClass.simpleName.asString()}:$luaTargetName(${docSignature})")
+            funcCall.docString?.let { doc ->
+                appendLine("```")
+                append(' ')
+                appendLine(doc.trim())
+                appendLine("```")
+            }
+        }
+
+        init {
+            if (returnResolved?.let { parResolved.unitResolved.isAssignableFrom(it) } == false)
+                mainBuilder.append("val rt = ")
+
+            declaredClass?.let { cl ->
+                mainBuilder.append("(")
+                val ty = cl.asStarProjectedType()
+                proc(ty, null)
+                mainBuilder.append(").")
+                    .append(funcCall.simpleName.asString())
+            } ?: run {
+                mainBuilder.append(funcCall.qualifiedName!!.asString())
+            }
+            mainBuilder.append("(")
+            if (ptResolved.isNotEmpty()) {
+                ptResolved.forEachIndexed { index, (vp, type) ->
+                    if (index != 0) mainBuilder.append(", ")
+                    proc(type, vp)
+                }
+            }
+            mainBuilder.append(")")
+        }
+    }
+
+    private class BindTargetPropertyGetterKt(
+        luaTargetName: String,
+        val property: KSPropertyDeclaration,
+        declaredClass: KSClassDeclaration?,
+        isPrivate: Boolean
+    ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
+        override val returnResolved = property.type.resolve()
+        override val doc = StringBuilder().apply {
+            if (declaredClass == null)
+                appendLine("## get_$luaTargetName()")
+            else appendLine("## ${declaredClass.simpleName.asString()}:get_$luaTargetName()")
+
+            property.docString?.let { doc ->
+                appendLine("```")
+                append(' ')
+                appendLine(doc.trim())
+                appendLine("```")
+            }
+        }
+
+        init {
+            mainBuilder.append("val rt = ")
+            declaredClass?.let { cl ->
+                mainBuilder.append("(")
+                val ty = cl.asStarProjectedType()
+                proc(ty, null)
+                mainBuilder.append(").")
+                    .append(property.simpleName.asString())
+            } ?: run {
+                mainBuilder.append(property.qualifiedName!!.asString())
+            }
+        }
+    }
+
+    private class BindTargetPropertySetterKt(
+        luaTargetName: String,
+        val property: KSPropertyDeclaration,
+        declaredClass: KSClassDeclaration?,
+        isPrivate: Boolean
+    ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
+        override val returnResolved = parResolved.unitResolved
+        val typeResolved = property.type.resolve()
+
+        override val doc = StringBuilder().apply {
+            if (declaredClass == null)
+                appendLine("## set_$luaTargetName(new_value: ${typeResolved.declaration.simpleName})")
+            // else appendLine("## get_$luaTargetName()")
+            else appendLine("## ${declaredClass.simpleName.asString()}:set_$luaTargetName(new_value)")
+            // else appendLine("## ${declaredClass.simpleName.asString()}:get_$luaTargetName()")
+
+            property.docString?.let { doc ->
+                appendLine("```")
+                append(' ')
+                appendLine(doc.trim())
+                appendLine("```")
+            }
+        }
+
+        init {
+            declaredClass?.let { cl ->
+                mainBuilder.append("(")
+                val ty = cl.asStarProjectedType()
+                proc(ty, null)
+                mainBuilder.append(").")
+                    .append(property.simpleName.asString())
+            } ?: run {
+                mainBuilder.append(property.qualifiedName!!.asString())
+            }
+            mainBuilder.append(" = ")
+            proc(typeResolved, null)
+        }
+    }
+
     private data class BindTargetLua(
-        val name: String, val targets: MutableList<BindTargetKt>, val declaredClass: KSClassDeclaration?
+        val name: String, val targets: MutableList<AbstractBindTarget>, val declaredClass: KSClassDeclaration?
     ) {
         val ktBind by lazy {
             StringBuilder().apply {
@@ -183,14 +287,7 @@ end
             StringBuilder().apply {
                 targets.forEach {
                     if (it.isPrivate) return@forEach
-                    if (declaredClass == null) appendLine("## $name(${it.signature})")
-                    else appendLine("## ${declaredClass.simpleName.asString()}:$name(${it.signature})")
-                    it.doc?.let { doc ->
-                        appendLine("```")
-                        append(' ')
-                        appendLine(doc.trim())
-                        appendLine("```")
-                    }
+                    append(it.doc)
                 }
             }
         }
@@ -381,8 +478,31 @@ end
                                 val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
                                 val overloadFns = ifn.getFunction(fnName)
                                 overloadFns.targets.add(
-                                    BindTargetKt(
-                                        fn, if (isStatic) null else classDeclaration, !annot.exportDoc
+                                    BindTargetFnKt(
+                                        fnName, fn, if (isStatic) null else classDeclaration, !annot.exportDoc
+                                    )
+                                )
+                                files.add(classDeclaration.containingFile!!)
+                            }
+
+                            classDeclaration.getDeclaredProperties().mapNotNull {
+                                it.getAnnotationsByType(
+                                    LuaFunction::class
+                                ).firstOrNull()?.let { annot -> it to annot }
+                            }.forEach { (fn, annot) ->
+                                val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
+                                if (annot.exportPropertySetter && fn.isMutable)
+                                    ifn.getFunction("set_$fnName").targets.add(
+                                        BindTargetPropertySetterKt(
+                                            "set_$fnName",
+                                            fn,
+                                            if (isStatic) null else classDeclaration,
+                                            !annot.exportDoc
+                                        )
+                                    )
+                                ifn.getFunction("get_$fnName").targets.add(
+                                    BindTargetPropertyGetterKt(
+                                        "get_$fnName", fn, if (isStatic) null else classDeclaration, !annot.exportDoc
                                     )
                                 )
                                 files.add(classDeclaration.containingFile!!)
