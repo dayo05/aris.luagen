@@ -15,6 +15,9 @@ import kotlin.random.Random
 @LuaProvider("TestGenerated")
 open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
     @LuaFunction
+    var aaa = 0
+
+    @LuaFunction
     fun f1(x: Int) {
         println("F1 called with $x")
     }
@@ -94,6 +97,9 @@ class TestAris: ILuaStaticDecl by TestAris_LuaGenerated {
         a++
         return this
     }
+
+    @LuaFunction
+    fun testV() { a++ }
 }
 
 class TestReflection {
@@ -102,10 +108,18 @@ class TestReflection {
         a++
         return this
     }
+
+    @LuaFunction
+    fun testV() { a++ }
 }
 
 @LuaProvider("TestGenerated")
 object SpeedTest {
+    @LuaFunction
+    fun getTestAris() = TestAris()
+    @LuaFunction
+    fun getTestReflection() = TestReflection()
+
     @LuaFunction
     fun getTesters() = LuaMultiReturn(TestAris(), TestReflection())
 
@@ -124,11 +138,13 @@ fun main() {
     engine.createTask(
         """
             local tester = create_test2()
+            tester:set_aaa(1557)
+            print(tester:get_aaa())
             tester:multiArgs(1, 2, tester, tester)
             local k = 0
             for i=1,1000 do k = k + i end
             
-            local aris, reflection = getTesters()
+            -- local aris, reflection = getTesters()
             
             print("begin")
             
@@ -142,11 +158,11 @@ fun main() {
             local n
             
             n = getNano()
-            for i=1,ep do reflection = reflection:test() end
+            for i=1,ep do getTestReflection():testV() end
             print("Original: " .. getNano() - n)
             
             n = getNano() 
-            for i=1,ep do aris = aris:test() end
+            for i=1,ep do getTestAris():testV() end
             print("Aris: " .. getNano() - n)
             
             local t = create_test2()
