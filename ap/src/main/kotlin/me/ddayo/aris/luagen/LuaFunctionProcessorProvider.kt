@@ -451,7 +451,7 @@ end
                     val nilFn = KTObjectProviderInstance().also { fns.add(it) }
                     classes.forEach { classDeclaration ->
                         sorter.addInstance(classDeclaration.qualifiedName!!.asString(), sorter.SorterInstance {
-                            logger.warn("Processing: ${classDeclaration.qualifiedName?.asString()}")
+                            logger.info("Processing: ${classDeclaration.qualifiedName?.asString()}")
                             val isStatic = when (classDeclaration.classKind) {
                                 ClassKind.CLASS -> false
                                 ClassKind.OBJECT -> true
@@ -515,7 +515,7 @@ end
                             .forEach { parent ->
                                 if (parent.isAnnotationPresent(LuaProvider::class)) {
                                     inherit[current.qualifiedName!!.asString()] = parent.qualifiedName!!.asString()
-                                    environment.logger.warn("Inherit: ${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
+                                    environment.logger.info("Inherit: ${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
 
                                     if (sorter[parent.qualifiedName!!.asString()] != null) sorter.setParent(
                                         parent.qualifiedName!!.asString(), current.qualifiedName!!.asString()
@@ -539,7 +539,7 @@ end
                 val pkg = environment.options["package_name"] ?: "me.ddayo.aris.gen"
 
                 functions.entries.forEach { (clName, cls) ->
-                    logger.warn(clName)
+                    logger.info("Generating: $clName")
                     val luaCode = cls.joinToString("\n") { fn -> fn.luaBindings }
 
                     val ktCode = StringBuilder().apply {
