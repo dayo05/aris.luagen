@@ -6,17 +6,16 @@ import me.ddayo.aris.gen.TestGenerated.Test2_LuaGenerated
 import me.ddayo.aris.gen.TestGenerated.TestAris_LuaGenerated
 import me.ddayo.aris.gen.TestGenerated
 import me.ddayo.aris.luagen.LuaFunction
-import me.ddayo.aris.luagen.LuaInstance
+import me.ddayo.aris.luagen.LuaProperty
+import me.ddayo.aris.luagen.RetrieveEngine
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.luajit.LuaJit
-import java.lang.ref.PhantomReference
-import java.lang.ref.ReferenceQueue
 import kotlin.random.Random
 
 @LuaProvider("TestGenerated")
 open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
-    @LuaFunction
+    @LuaProperty
     var aaa = 0
 
     @LuaFunction
@@ -25,7 +24,8 @@ open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
     }
 
     @LuaFunction
-    fun getLua(@LuaInstance instance: Lua) {
+    fun getLua(@RetrieveEngine instance: LuaEngine) {
+        val instance = instance.lua
         instance.getGlobal("test1")
         println(instance.get().type())
         instance.push(5)

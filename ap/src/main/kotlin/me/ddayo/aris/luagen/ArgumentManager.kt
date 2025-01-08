@@ -160,13 +160,13 @@ internal object ArgumentManager {
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            builder.append("lua")
+            builder.append("engine")
             return index
         }
 
         @OptIn(KspExperimental::class)
         override fun isValid(type: KSType, param: KSValueParameter?) =
-            param?.getAnnotationsByType(LuaInstance::class)?.any() == true
+            param?.getAnnotationsByType(RetrieveEngine::class)?.any() == true
     }
 
     class LuaFuncArgument : Argument() {

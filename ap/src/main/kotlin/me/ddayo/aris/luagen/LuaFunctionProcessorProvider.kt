@@ -487,7 +487,7 @@ end
 
                             classDeclaration.getDeclaredProperties().mapNotNull {
                                 it.getAnnotationsByType(
-                                    LuaFunction::class
+                                    LuaProperty::class
                                 ).firstOrNull()?.let { annot -> it to annot }
                             }.forEach { (fn, annot) ->
                                 val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name

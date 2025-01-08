@@ -2,4 +2,4 @@ package me.ddayo.aris.luagen
 
 @Target(AnnotationTarget.VALUE_PARAMETER)
 @Retention(AnnotationRetention.SOURCE)
-annotation class LuaInstance
+annotation class RetrieveEngine
