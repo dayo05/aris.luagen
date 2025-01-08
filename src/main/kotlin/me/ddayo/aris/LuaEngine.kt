@@ -5,7 +5,13 @@ import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
-import party.iroiro.luajava.luajit.LuaJitNatives
+
+
+@RequiresOptIn(
+    message = "Allocated reference may cause unexpected behaviour. Make sure all references are invalidated. I highly recommend recreating entire engine for unloading action.",
+    level = RequiresOptIn.Level.ERROR
+)
+annotation class ReferenceMayKeepAlive
 
 open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = true, private val errorMessageHandler: (s: String) -> Unit = {}) {
     enum class TaskStatus {
@@ -42,24 +48,26 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
 
     init {
         LuaMain.initLua(lua)
+
+        lua.push { lua ->
+            currentTask?.toLua(lua) ?: run { lua.pushNil() }
+            1
+        }
+        lua.setGlobal("get_current_task")
     }
 
     val tasks = mutableListOf<LuaTask>()
 
-    var loopCount = 0L
-        private set
+    private var currentTask: LuaTask? = null
 
     fun loop() {
-        for (task in tasks)
+        for (task in tasks) {
+            currentTask = task
             task.loop()
-        loopCount++
+        }
     }
 
-    private var lastLoop = -1L
-    fun testInfinite() = (lastLoop == loopCount).also {
-        lastLoop = loopCount
-    }
-
+    @ReferenceMayKeepAlive
     fun removeAllFinished() {
         tasks.removeAll { it.taskStatus == TaskStatus.FINISHED }
     }
@@ -75,7 +83,11 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
         var taskStatus = TaskStatus.INITIALIZED
             protected set
 
-        private lateinit var coroutine: Lua
+        lateinit var coroutine: Lua
+            private set
+
+        var externalRefCount = 0
+
         private val refIdx: Int // function to executed inside coroutine
 
         open var isPaused = false
@@ -83,14 +95,16 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
         init {
             val codeBuilder = StringBuilder()
             codeBuilder.append("return function(task)")
-            if(preventInfinityLoop)
-                codeBuilder.append("""
+            if (preventInfinityLoop)
+                codeBuilder.append(
+                    """
     debug.sethook(function()
         if task:test_execution() then 
             error("Infinite loop detected!! Please yield frequently.") 
         end 
     end, "", 1000000)
-                """.trimIndent())
+                """.trimIndent()
+                )
             codeBuilder.appendLine(code)
             codeBuilder.append("end")
 
@@ -111,6 +125,7 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
 
         private var resumeParam = 0
         private fun init() {
+            externalRefCount = 0
             coroutine = lua.newThread()
             coroutine.refGet(refIdx) // code
             coroutine.pushJavaObject(this)
@@ -146,11 +161,17 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
             lua.unref(refIdx)
         }
 
+        @ReferenceMayKeepAlive
         open fun remove() {
+            if(externalRefCount != 0)
+                errorMessageHandler("Task $name removed with remaining $externalRefCount references")
             tasks.remove(this)
         }
 
+        @ReferenceMayKeepAlive
         fun restart() {
+            if(externalRefCount != 0)
+                errorMessageHandler("Task $name restarted with remaining $externalRefCount references")
             coroutine.close()
             init()
         }
@@ -158,8 +179,5 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
         @LuaFunction("get_task_name")
         @JvmName("get_name")
         fun getName() = name
-
-        @LuaFunction("test_execution")
-        fun testExecution() = engine.testInfinite()
     }
 }
