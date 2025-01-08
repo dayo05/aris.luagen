@@ -5,15 +5,10 @@ import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
+import java.lang.ref.ReferenceQueue
 
 
-@RequiresOptIn(
-    message = "Allocated reference may cause unexpected behaviour. Make sure all references are invalidated. I highly recommend recreating entire engine for unloading action.",
-    level = RequiresOptIn.Level.ERROR
-)
-annotation class ReferenceMayKeepAlive
-
-open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = true, private val errorMessageHandler: (s: String) -> Unit = {}) {
+open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) -> Unit = {}) {
     enum class TaskStatus {
         /**
          * Task loaded to lua engine but never executed yet
@@ -47,7 +42,8 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
     }
 
     init {
-        LuaMain.initLua(lua)
+        // this is safe due initLua only tries to get `lua` instance this time.
+        LuaMain.initLua(this)
 
         lua.push { lua ->
             currentTask?.toLua(lua) ?: run { lua.pushNil() }
@@ -56,20 +52,34 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
         lua.setGlobal("get_current_task")
     }
 
+    private val refs = mutableListOf<ArisPhantomReference>()
+    private val arisRefQueue = ReferenceQueue<Any>()
+
     val tasks = mutableListOf<LuaTask>()
 
-    private var currentTask: LuaTask? = null
+    var currentTask: LuaTask? = null
+        private set
 
     fun loop() {
         for (task in tasks) {
             currentTask = task
             task.loop()
         }
+        currentTask = null
+        while(true) {
+            val ref = ((arisRefQueue.poll() ?: break) as ArisPhantomReference)
+            refs.remove(ref)
+            if(ref.ref == -1) continue
+            ref.task?.let {
+                it.externalRefCount--
+            }
+            lua.unref(ref.ref)
+        }
     }
 
     @ReferenceMayKeepAlive
     fun removeAllFinished() {
-        tasks.removeAll { it.taskStatus == TaskStatus.FINISHED }
+        tasks.removeAll { it.taskStatus == TaskStatus.FINISHED && it.externalRefCount == 0 }
     }
 
     open fun createTask(code: String, name: String, repeat: Boolean = false) =
@@ -95,16 +105,6 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
         init {
             val codeBuilder = StringBuilder()
             codeBuilder.append("return function(task)")
-            if (preventInfinityLoop)
-                codeBuilder.append(
-                    """
-    debug.sethook(function()
-        if task:test_execution() then 
-            error("Infinite loop detected!! Please yield frequently.") 
-        end 
-    end, "", 1000000)
-                """.trimIndent()
-                )
             codeBuilder.appendLine(code)
             codeBuilder.append("end")
 
@@ -157,8 +157,9 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
         }
 
         // unref code on Java object has been collected by GC
-        fun finalize() {
-            lua.unref(refIdx)
+        private val ref = refIdx
+        init {
+            refs.add(ArisPhantomReference(this, null, ref, arisRefQueue))
         }
 
         @ReferenceMayKeepAlive
@@ -174,6 +175,11 @@ open class LuaEngine(protected val lua: Lua, val preventInfinityLoop: Boolean = 
                 errorMessageHandler("Task $name restarted with remaining $externalRefCount references")
             coroutine.close()
             init()
+        }
+
+        fun ref(self: Any, ref: Int) {
+            externalRefCount++
+            refs.add(ArisPhantomReference(self, this, ref, arisRefQueue))
         }
 
         @LuaFunction("get_task_name")

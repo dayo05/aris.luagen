@@ -98,7 +98,8 @@ object LuaMain {
         private set
     private var _luaGcInternal = -1
 
-    internal fun initLua(lua: Lua) {
+    internal fun initLua(engine: LuaEngine) {
+        val lua = engine.lua
         lua.openLibraries()
 
         run {
@@ -152,6 +153,6 @@ object LuaMain {
         """.trimIndent())
         lua.pCall(0, 0)
 
-        LuaGenerated.initLua(lua)
+        LuaGenerated.initLua(engine)
     }
 }

@@ -1,25 +1,19 @@
 package me.ddayo.aris
 
-import java.lang.ref.Cleaner
 
-class LuaFunc(private val task: LuaEngine.LuaTask, loc: Int = -1) {
-    companion object {
-        private val luaFuncCleaner = Cleaner.create()
-    }
+class LuaFunc(engine: LuaEngine, loc: Int = -1) {
+    private val task = engine.currentTask!!
     private val lua = task.coroutine
     init {
-        task.externalRefCount++
         if (!lua.isFunction(loc))
             throw Exception("Lua function expected but got ${lua.type(loc)}")
         lua.pushValue(loc)
-
-        luaFuncCleaner.register(this) {
-            lua.unref(ref)
-            task.externalRefCount--
-        }
     }
 
     private val ref = lua.ref()
+    init {
+        task.ref(this, ref)
+    }
 
     fun call(vararg values: Any) {
         lua.refGet(ref)

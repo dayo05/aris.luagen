@@ -557,7 +557,8 @@ object $clName {"""
                         appendLine(cls.joinToString("\n") { fn -> fn.refGenerated })
                         appendLine(
                             """
-    fun initLua(lua: Lua) {
+    fun initLua(engine: LuaEngine) {
+        val lua = engine.lua
 """
                         )
                         // Add all kotlin binding code(overloading resolved)

@@ -10,6 +10,8 @@ import me.ddayo.aris.luagen.LuaInstance
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.luajit.LuaJit
+import java.lang.ref.PhantomReference
+import java.lang.ref.ReferenceQueue
 import kotlin.random.Random
 
 @LuaProvider("TestGenerated")
@@ -36,6 +38,7 @@ open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
     }
 
     var a = 0
+
     @LuaFunction
     fun incr(): LuaMultiReturn {
         a++
@@ -70,6 +73,14 @@ object TestObj {
 
     @LuaFunction
     fun print(x: String) = println(x)
+
+    @LuaFunction
+    fun functionTest(fn: LuaFunc) {
+        // fn.call(1, 2, 3)
+    }
+
+    @LuaFunction
+    fun p(s: String) = print(s as Any)
 }
 
 @LuaProvider("TestGenerated")
@@ -90,8 +101,9 @@ class Test2 : Test1(), ILuaStaticDecl by Test2_LuaGenerated, CoroutineProvider {
 }
 
 @LuaProvider("TestGenerated")
-class TestAris: ILuaStaticDecl by TestAris_LuaGenerated {
+class TestAris : ILuaStaticDecl by TestAris_LuaGenerated {
     var a = 0
+
     @LuaFunction
     fun test(): TestAris {
         a++
@@ -99,7 +111,9 @@ class TestAris: ILuaStaticDecl by TestAris_LuaGenerated {
     }
 
     @LuaFunction
-    fun testV() { a++ }
+    fun testV() {
+        a++
+    }
 }
 
 class TestReflection {
@@ -110,13 +124,16 @@ class TestReflection {
     }
 
     @LuaFunction
-    fun testV() { a++ }
+    fun testV() {
+        a++
+    }
 }
 
 @LuaProvider("TestGenerated")
 object SpeedTest {
     @LuaFunction
     fun getTestAris() = TestAris()
+
     @LuaFunction
     fun getTestReflection() = TestReflection()
 
@@ -127,12 +144,13 @@ object SpeedTest {
     fun getNano() = System.nanoTime()
 }
 
-class TestEngine(lua: Lua) : LuaEngine(lua, false) {
+class TestEngine(lua: Lua) : LuaEngine(lua, { println(it) }) {
     init {
-        TestGenerated.initLua(lua)
+        TestGenerated.initLua(this)
     }
 }
 
+@OptIn(ReferenceMayKeepAlive::class)
 fun main() {
     val engine = TestEngine(LuaJit())
     engine.createTask(
@@ -148,11 +166,11 @@ fun main() {
             
             print("begin")
             
-            local ep = 10000000
+            -- local ep = 10000000
             -- Original: 11220988583
             --     Aris: 10608901500
             
-            -- local ep = 100
+            local ep = 100
             -- Original: 2412125
             --     Aris: 402875
             local n
@@ -186,24 +204,24 @@ fun main() {
             while true do
                 local a = ""
                 for x = 0, 1000 do
-                    d[rand(100)] = { a = create_test2() }
+                    functionTest(function(a, b, c) print(a .. b .. c) end)
+                    d[rand(10000)] = { a = create_test2() }
                 end
-                print(task:get_task_name() .. ": " .. collectgarbage("count"))
-                print(test1)
-                task_sleep(10000)
+                p(".")
+                -- print(task:get_task_name() .. ": " .. collectgarbage("count"))
+                -- print(test1)
+                task_sleep(100)
             end
         """.trimIndent(), "name"
     )
 
-    val task = engine.tasks.first()
-    if(task.errorMessage.isNotEmpty())
-        println(task.errorMessage)
     while (true) {
         engine.loop()
-        if(task.errorMessage.isNotEmpty())
-            println(task.pullError())
+        engine.removeAllFinished()
 
         // println(Runtime.getRuntime().totalMemory())
         Thread.sleep(100)
+        System.gc()
+        engine.lua.gc()
     }
 }
