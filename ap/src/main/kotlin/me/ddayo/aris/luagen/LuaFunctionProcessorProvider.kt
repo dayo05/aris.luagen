@@ -74,11 +74,11 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                         }
 
                         parResolved.staticDeclResolved.isAssignableFrom(it) -> {
-                            appendLine(handleNullable("lua.pushJavaObject(rt)\nrt.toLua(engine)"))
+                            appendLine(handleNullable("lua.pushJavaObject(rt)\nrt.toLua(engine, lua)"))
                             appendLine("return@push 1")
                         }
 
-                        else -> appendLine("return@push LuaMain.pushNoInline(rt)")
+                        else -> appendLine("return@push LuaMain.pushNoInline(lua, rt)")
                     }
                 } ?: run { appendLine("return@push 0") }
                 appendLine("}")
@@ -364,8 +364,7 @@ end
 
         override val objectGenerated = StringBuilder().apply {
             appendLine("object ${simpleName}_LuaGenerated: ILuaStaticDecl {")
-            appendLine("    override fun toLua(engine: LuaEngine) {")
-            appendLine("        val lua = engine.currentTask!!.coroutine")
+            appendLine("    override fun toLua(engine: LuaEngine, lua: Lua) {")
             appendLine(
                 "        lua.refGet(engine.inner[\"aris_${
                     className.replace(".", "_")

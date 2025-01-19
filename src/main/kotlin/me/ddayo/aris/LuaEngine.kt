@@ -50,7 +50,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
 
     init {
         lua.push { lua ->
-            currentTask?.toLua(this) ?: run { lua.pushNil() }
+            currentTask?.toLua(this, lua) ?: run { lua.pushNil() }
             1
         }
         lua.setGlobal("get_current_task")

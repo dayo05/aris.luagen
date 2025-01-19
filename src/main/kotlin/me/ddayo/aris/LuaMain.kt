@@ -1,11 +1,10 @@
 package me.ddayo.aris
 
-import me.ddayo.aris.gen.LuaGenerated
+import party.iroiro.luajava.Lua
 
 class LuaMain(val engine: LuaEngine) {
 
-    fun pushNoInline(it: Any?): Int {
-        val lua = engine.currentTask!!.coroutine
+    fun pushNoInline(lua: Lua, it: Any?): Int {
         when (it) {
             null -> {
                 lua.pushNil()
@@ -39,12 +38,12 @@ class LuaMain(val engine: LuaEngine) {
 
             is ILuaStaticDecl -> {
                 lua.pushJavaObject(it)
-                it.toLua(engine)
+                it.toLua(engine, lua)
                 return 1
             }
 
             is LuaMultiReturn -> {
-                it.luaFn(engine)
+                it.luaFn(engine, lua)
                 return it.size
             }
 
@@ -59,8 +58,7 @@ class LuaMain(val engine: LuaEngine) {
         }
     }
 
-    inline fun <reified T> push(it: T): Int {
-        val lua = engine.currentTask!!.coroutine
+    inline fun <reified T> push(lua: Lua, it: T): Int {
         when (it) {
             null -> {
                 lua.pushNil()
@@ -94,12 +92,12 @@ class LuaMain(val engine: LuaEngine) {
 
             is ILuaStaticDecl -> {
                 lua.pushJavaObject(it)
-                it.toLua(engine)
+                it.toLua(engine, lua)
                 return 1
             }
 
             is LuaMultiReturn -> {
-                it.luaFn(engine)
+                it.luaFn(engine, lua)
                 return it.size
             }
 
