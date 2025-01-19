@@ -78,7 +78,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                             appendLine("return@push 1")
                         }
 
-                        else -> appendLine("return@push LuaMain.push(rt)")
+                        else -> appendLine("return@push LuaMain.pushNoInline(rt)")
                     }
                 } ?: run { appendLine("return@push 0") }
                 appendLine("}")
@@ -89,7 +89,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
             appendLine(
                 """
 if table_size >= ${svp - 1} then
-    local task_score = 0
+    local task_score = ${svp - 1}
     if task_score >= score then
         score = task_score
         sel_fn = function(...)
@@ -121,18 +121,21 @@ end
         declaredClass: KSClassDeclaration?,
         isPrivate: Boolean
     ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
-        override val returnResolved = funcCall.returnType?.resolve()
+        override val returnResolved = funcCall.returnType?.resolve()?.starProjection()
 
         val ptResolved: MutableList<Pair<KSValueParameter?, KSType>> =
             funcCall.parameters.map { it to it.type.resolve() }.toMutableList()
 
         val docSignature =
-            funcCall.parameters.joinToString(", ") { "${it.name?.asString()}: ${it.type.resolve().declaration.simpleName.asString()}" }
+            funcCall.parameters.joinToString(", ") { "${it.name?.asString()}: ${parResolved.getLuaFriendlyName(it.type.resolve())}" }
 
         // override val doc = funcCall.docString ?: ""
         override val doc = StringBuilder().apply {
-            if (declaredClass == null) appendLine("## $luaTargetName(${docSignature})")
-            else appendLine("## ${declaredClass.simpleName.asString()}:$luaTargetName(${docSignature})")
+            if (declaredClass == null) append("## $luaTargetName(${docSignature})")
+            else append("## ${declaredClass.simpleName.asString()}:$luaTargetName(${docSignature})")
+            if (returnResolved != null && !returnResolved.isAssignableFrom(parResolved.unitResolved))
+                appendLine(" -> ${parResolved.getLuaFriendlyName(returnResolved)}")
+            else appendLine()
             funcCall.docString?.let { doc ->
                 appendLine("```")
                 append(' ')
@@ -171,11 +174,17 @@ end
         declaredClass: KSClassDeclaration?,
         isPrivate: Boolean
     ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
-        override val returnResolved = property.type.resolve()
+        override val returnResolved = property.type.resolve().starProjection()
         override val doc = StringBuilder().apply {
             if (declaredClass == null)
-                appendLine("## get_$luaTargetName()")
-            else appendLine("## ${declaredClass.simpleName.asString()}:get_$luaTargetName()")
+                appendLine("## $luaTargetName() -> ${parResolved.getLuaFriendlyName(returnResolved)}")
+            else appendLine(
+                "## ${declaredClass.simpleName.asString()}:$luaTargetName() -> ${
+                    parResolved.getLuaFriendlyName(
+                        returnResolved
+                    )
+                }"
+            )
 
             property.docString?.let { doc ->
                 appendLine("```")
@@ -210,10 +219,14 @@ end
 
         override val doc = StringBuilder().apply {
             if (declaredClass == null)
-                appendLine("## set_$luaTargetName(new_value: ${typeResolved.declaration.simpleName})")
-            // else appendLine("## get_$luaTargetName()")
-            else appendLine("## ${declaredClass.simpleName.asString()}:set_$luaTargetName(new_value)")
-            // else appendLine("## ${declaredClass.simpleName.asString()}:get_$luaTargetName()")
+                appendLine("## $luaTargetName(new_value: ${parResolved.getLuaFriendlyName(typeResolved)})")
+            else appendLine(
+                "## ${declaredClass.simpleName.asString()}:$luaTargetName(new_value: ${
+                    parResolved.getLuaFriendlyName(
+                        typeResolved
+                    )
+                })"
+            )
 
             property.docString?.let { doc ->
                 appendLine("```")
@@ -354,9 +367,9 @@ end
             appendLine("    override fun toLua(engine: LuaEngine) {")
             appendLine("        val lua = engine.currentTask!!.coroutine")
             appendLine(
-                "        lua.refGet(aris_${
+                "        lua.refGet(engine.inner[\"aris_${
                     className.replace(".", "_")
-                }_mt)"
+                }_mt\"]!!)"
             )
             appendLine("        lua.setMetatable(-2)")
             appendLine("    }")
@@ -410,6 +423,7 @@ end
 
                 appendLine("lua.setField(-2, \"__index\")")
                 appendLine("aris_${cln}_mt = lua.ref()")
+                appendLine("engine.inner[\"aris_${cln}_mt\"] = aris_${cln}_mt")
             }
     }
 
@@ -557,7 +571,7 @@ object $clName {"""
                         appendLine(cls.joinToString("\n") { fn -> fn.refGenerated })
                         appendLine(
                             """
-    fun initLua(engine: LuaEngine) {
+    fun initEngine(engine: LuaEngine) {
         val lua = engine.lua
         val LuaMain = engine.luaMain 
 """

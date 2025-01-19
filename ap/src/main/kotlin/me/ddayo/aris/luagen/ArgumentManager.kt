@@ -139,6 +139,20 @@ internal object ArgumentManager {
             parResolved.booleanResolved.isAssignableFrom(type)
     }
 
+    class DefaultJavaObjectArgument : Argument() {
+        override fun resolve(
+            index: Int,
+            builder: StringBuilder,
+            declaredClass: KSClassDeclaration,
+            param: KSValueParameter?
+        ): Int {
+            builder.append("lua.toJavaObject($index) as ${intoProjectedStr(declaredClass)}")
+            return index + 1
+        }
+
+        override fun isValid(type: KSType, param: KSValueParameter?) = true
+    }
+
     class ListArgument : Argument() {
         override fun resolve(
             index: Int,
@@ -224,7 +238,7 @@ internal object ArgumentManager {
             return currentStackPos - 1
         }
 
-        override fun isValid(type: KSType, param: KSValueParameter?) = true
+        override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.staticDeclResolved.isAssignableFrom(type)
     }
 
     abstract class Argument {
@@ -280,12 +294,27 @@ internal object ArgumentManager {
         abstract fun isValid(type: KSType, param: KSValueParameter?): Boolean
     }
 
+    fun intoProjectedStrInner(classDecl: KSClassDeclaration, sb: StringBuilder) {
+        if(classDecl.parentDeclaration !is KSClassDeclaration) {
+            sb.append(classDecl.qualifiedName!!.asString())
+            if (classDecl.typeParameters.isNotEmpty()) (0 until classDecl.typeParameters.size).joinTo(
+                sb, prefix = "<", postfix = ">"
+            ) { "*" }
+        }
+        else {
+            intoProjectedStrInner(classDecl.parentDeclaration as KSClassDeclaration, sb)
+            sb.append(".")
+            sb.append(classDecl.simpleName.asString())
+            if (classDecl.typeParameters.isNotEmpty()) (0 until classDecl.typeParameters.size).joinTo(
+                sb, prefix = "<", postfix = ">"
+            ) { "*" }
+        }
+    }
+
     fun intoProjectedStr(classDecl: KSClassDeclaration): String {
-        val s = StringBuilder(classDecl.qualifiedName!!.asString())
-        if (classDecl.typeParameters.isNotEmpty()) (0 until classDecl.typeParameters.size).joinTo(
-            s, prefix = "<", postfix = ">"
-        ) { "*" }
-        return s.toString()
+        val sb = StringBuilder()
+        intoProjectedStrInner(classDecl, sb)
+        return sb.toString()
     }
 
     val argFilters
@@ -302,6 +331,7 @@ internal object ArgumentManager {
             ListArgument(),
             LuaFuncArgument(),
             EngineArgument(),
-            JavaObjectArgument()
+            JavaObjectArgument(),
+            DefaultJavaObjectArgument()
         )
 }

@@ -54,7 +54,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
             1
         }
         lua.setGlobal("get_current_task")
-        LuaGenerated.initLua(this)
+        LuaGenerated.initEngine(this)
     }
 
     private val refs = mutableListOf<ArisPhantomReference>()

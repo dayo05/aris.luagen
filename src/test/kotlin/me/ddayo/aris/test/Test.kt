@@ -146,7 +146,7 @@ object SpeedTest {
 
 class TestEngine(lua: Lua) : LuaEngine(lua, { println(it) }) {
     init {
-        TestGenerated.initLua(this)
+        TestGenerated.initEngine(this)
     }
 }
 
