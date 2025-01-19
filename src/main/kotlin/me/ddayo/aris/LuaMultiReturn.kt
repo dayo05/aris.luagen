@@ -1,11 +1,11 @@
 package me.ddayo.aris
 
-import party.iroiro.luajava.Lua
 
 class LuaMultiReturn(private vararg val vars: Any) {
     companion object {
-        fun <T> push(lua: Lua, it: T) {
-            when(it) {
+        fun <T> push(engine: LuaEngine, it: T) {
+            val lua = engine.currentTask!!.coroutine
+            when (it) {
                 null -> lua.pushNil()
                 is Number -> lua.push(it)
                 is Boolean -> lua.push(it)
@@ -14,16 +14,17 @@ class LuaMultiReturn(private vararg val vars: Any) {
                 is Class<*> -> lua.pushJavaClass(it)
                 is ILuaStaticDecl -> {
                     lua.pushJavaObject(it)
-                    it.toLua(lua)
+                    it.toLua(engine)
                 }
+
                 else -> lua.pushJavaObject(it as Any)
             }
         }
     }
 
-    fun luaFn(lua: Lua): Int {
-        for(x in vars)
-            push(lua, x)
+    fun luaFn(engine: LuaEngine): Int {
+        for (x in vars)
+            push(engine, x)
         return vars.size
     }
 

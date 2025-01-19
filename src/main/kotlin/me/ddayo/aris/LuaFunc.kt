@@ -1,7 +1,7 @@
 package me.ddayo.aris
 
 
-class LuaFunc(engine: LuaEngine, loc: Int = -1) {
+class LuaFunc(private val engine: LuaEngine, loc: Int = -1) {
     private val task = engine.currentTask!!
     private val lua = task.coroutine
     init {
@@ -19,7 +19,7 @@ class LuaFunc(engine: LuaEngine, loc: Int = -1) {
         lua.refGet(ref)
 
         var a = 0
-        for (x in values) a += LuaMain.pushNoInline(lua, x)
+        for (x in values) a += engine.luaMain.pushNoInline(x)
 
         lua.pCall(a, 0)
     }

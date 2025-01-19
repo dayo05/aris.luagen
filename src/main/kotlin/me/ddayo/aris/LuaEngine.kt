@@ -1,5 +1,6 @@
 package me.ddayo.aris
 
+import me.ddayo.aris.gen.LuaGenerated
 import me.ddayo.aris.gen.LuaGenerated.LuaTask_LuaGenerated
 import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
@@ -41,15 +42,19 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
         FINISHED
     }
 
-    init {
-        // this is safe due initLua only tries to get `lua` instance this time.
-        LuaMain.initLua(this)
+    val inner = mutableMapOf<String, Int>()
 
+
+    // this is safe due initLua only tries to get `lua` instance this time.
+    val luaMain = LuaMain(this)
+
+    init {
         lua.push { lua ->
-            currentTask?.toLua(lua) ?: run { lua.pushNil() }
+            currentTask?.toLua(this) ?: run { lua.pushNil() }
             1
         }
         lua.setGlobal("get_current_task")
+        LuaGenerated.initLua(this)
     }
 
     private val refs = mutableListOf<ArisPhantomReference>()
@@ -104,7 +109,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
 
         init {
             val codeBuilder = StringBuilder()
-            codeBuilder.append("return function(task)")
+            codeBuilder.append("return function()")
             codeBuilder.appendLine(code)
             codeBuilder.append("end")
 
@@ -128,9 +133,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
             externalRefCount = 0
             coroutine = lua.newThread()
             coroutine.refGet(refIdx) // code
-            coroutine.pushJavaObject(this)
-            LuaTask_LuaGenerated.toLua(coroutine)
-            resumeParam = 1
+            resumeParam = 0
             taskStatus = TaskStatus.INITIALIZED
         }
 

@@ -1,47 +1,57 @@
 package me.ddayo.aris
 
 import me.ddayo.aris.gen.LuaGenerated
-import party.iroiro.luajava.Lua
 
-object LuaMain {
-    fun pushNoInline(lua: Lua, it: Any?): Int {
+class LuaMain(val engine: LuaEngine) {
+
+    fun pushNoInline(it: Any?): Int {
+        val lua = engine.currentTask!!.coroutine
         when (it) {
             null -> {
                 lua.pushNil()
                 return 1
             }
+
             is Number -> {
                 lua.push(it)
                 return 1
             }
+
             is Boolean -> {
                 lua.push(it)
                 return 1
             }
+
             is String -> {
                 lua.push(it)
                 return 1
             }
+
             is Map<*, *> -> {
                 lua.push(it)
                 return 1
             }
+
             is Class<*> -> {
                 lua.pushJavaClass(it)
                 return 1
             }
+
             is ILuaStaticDecl -> {
                 lua.pushJavaObject(it)
-                it.toLua(lua)
+                it.toLua(engine)
                 return 1
             }
+
             is LuaMultiReturn -> {
-                it.luaFn(lua)
+                it.luaFn(engine)
                 return it.size
             }
+
             is Unit -> {
                 return 0
             }
+
             else -> {
                 lua.pushJavaObject(it as Any)
                 return 1
@@ -49,44 +59,54 @@ object LuaMain {
         }
     }
 
-    inline fun <reified T> push(lua: Lua, it: T): Int {
+    inline fun <reified T> push(it: T): Int {
+        val lua = engine.currentTask!!.coroutine
         when (it) {
             null -> {
                 lua.pushNil()
                 return 1
             }
+
             is Number -> {
                 lua.push(it)
                 return 1
             }
+
             is Boolean -> {
                 lua.push(it)
                 return 1
             }
+
             is String -> {
                 lua.push(it)
                 return 1
             }
+
             is Map<*, *> -> {
                 lua.push(it)
                 return 1
             }
+
             is Class<*> -> {
                 lua.pushJavaClass(it)
                 return 1
             }
+
             is ILuaStaticDecl -> {
                 lua.pushJavaObject(it)
-                it.toLua(lua)
+                it.toLua(engine)
                 return 1
             }
+
             is LuaMultiReturn -> {
-                it.luaFn(lua)
+                it.luaFn(engine)
                 return it.size
             }
+
             is Unit -> {
                 return 0
             }
+
             else -> {
                 lua.pushJavaObject(it as Any)
                 return 1
@@ -98,7 +118,7 @@ object LuaMain {
         private set
     private var _luaGcInternal = -1
 
-    internal fun initLua(engine: LuaEngine) {
+    init {
         val lua = engine.lua
         lua.openLibraries()
 
@@ -107,7 +127,7 @@ object LuaMain {
             lua.getMetatable(-1)
             _luaGlobalMt = lua.ref()
 
-            if(lua.getMetaField(-1, "__gc") == 0) throw NoSuchElementException("Cannot retrieve __gc metafield")
+            if (lua.getMetaField(-1, "__gc") == 0) throw NoSuchElementException("Cannot retrieve __gc metafield")
             _luaGcInternal = lua.ref()
             lua.push { lua ->
                 // lua.pushTable(...)
@@ -120,9 +140,13 @@ object LuaMain {
                 0
             }
             lua.setGlobal("aris__gc")
-            if(lua.getMetaField(-1, "__newindex") == 0) throw NoSuchElementException("Cannot retrieve __newindex metafield")
+            if (lua.getMetaField(
+                    -1,
+                    "__newindex"
+                ) == 0
+            ) throw NoSuchElementException("Cannot retrieve __newindex metafield")
             lua.setGlobal("aris__newindex")
-            if(lua.getMetaField(-1, "__eq") == 0) throw NoSuchElementException("Cannot retrieve __eq metafield")
+            if (lua.getMetaField(-1, "__eq") == 0) throw NoSuchElementException("Cannot retrieve __eq metafield")
             lua.setGlobal("aris__eq")
             lua.pop(1)
         }
@@ -133,7 +157,8 @@ object LuaMain {
         }
         lua.setGlobal("get_time")
 
-        lua.load("""
+        lua.load(
+            """
             local function true_fn() return true end
 
             function task_sleep(time)
@@ -150,9 +175,8 @@ object LuaMain {
                     if(fn()) then break end
                 end
             end
-        """.trimIndent())
+        """.trimIndent()
+        )
         lua.pCall(0, 0)
-
-        LuaGenerated.initLua(engine)
     }
 }

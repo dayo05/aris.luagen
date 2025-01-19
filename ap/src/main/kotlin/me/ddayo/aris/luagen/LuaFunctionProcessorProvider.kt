@@ -74,11 +74,11 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                         }
 
                         parResolved.staticDeclResolved.isAssignableFrom(it) -> {
-                            appendLine(handleNullable("lua.pushJavaObject(rt)\nrt.toLua(lua)"))
+                            appendLine(handleNullable("lua.pushJavaObject(rt)\nrt.toLua(engine)"))
                             appendLine("return@push 1")
                         }
 
-                        else -> appendLine("return@push push(lua, rt)")
+                        else -> appendLine("return@push LuaMain.push(rt)")
                     }
                 } ?: run { appendLine("return@push 0") }
                 appendLine("}")
@@ -351,7 +351,8 @@ end
 
         override val objectGenerated = StringBuilder().apply {
             appendLine("object ${simpleName}_LuaGenerated: ILuaStaticDecl {")
-            appendLine("    override fun toLua(lua: Lua) {")
+            appendLine("    override fun toLua(engine: LuaEngine) {")
+            appendLine("        val lua = engine.currentTask!!.coroutine")
             appendLine(
                 "        lua.refGet(aris_${
                     className.replace(".", "_")
@@ -549,7 +550,6 @@ end
 import me.ddayo.aris.LuaMultiReturn
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
-import me.ddayo.aris.LuaMain.push
 import me.ddayo.aris.*
 
 object $clName {"""
@@ -559,6 +559,7 @@ object $clName {"""
                             """
     fun initLua(engine: LuaEngine) {
         val lua = engine.lua
+        val LuaMain = engine.luaMain 
 """
                         )
                         // Add all kotlin binding code(overloading resolved)
