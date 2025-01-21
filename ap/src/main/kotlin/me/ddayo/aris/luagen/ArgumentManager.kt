@@ -174,7 +174,7 @@ internal object ArgumentManager {
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            builder.append("engine")
+            builder.append("engine as ${intoProjectedStr(declaredClass)}")
             return index
         }
 
