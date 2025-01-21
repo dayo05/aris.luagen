@@ -514,12 +514,12 @@ end
                 val byProvider = mutableMapOf<String, MutableList<KSClassDeclaration>>()
                 resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).let { providers ->
                     providers.mapNotNull { it as? KSClassDeclaration }.forEach { classDeclaration ->
-                        val cln =
-                            classDeclaration.getAnnotationsByType(LuaProvider::class).firstOrNull()?.className.let {
-                                if (it == null || it == "!") defCln
+                        classDeclaration.getAnnotationsByType(LuaProvider::class).forEach {
+                            byProvider.getOrPut(it.className.let {
+                                if (it == "!") defCln
                                 else it
-                            }
-                        byProvider.getOrPut(cln) { mutableListOf() }.add(classDeclaration)
+                            }) { mutableListOf() }.add(classDeclaration)
+                        }
                     }
                 }
 
@@ -540,55 +540,58 @@ end
                                 )
                             }
 
-                            val providerAnnot = classDeclaration.getAnnotationsByType(LuaProvider::class).first()
-
-                            val ifn = if (isStatic) nilFn
-                            else KTProviderInstance(classDeclaration).also { fns.add(it) }.also {
-                                val clName = classDeclaration.qualifiedName!!.asString()
-                                if (inherit[clName] != null) {
-                                    it.inherit = inherit[clName]
-                                    it.inheritParent = providerAnnot.inherit
+                            classDeclaration.getAnnotationsByType(LuaProvider::class).forEach { providerAnnot ->
+                                val ifn = if (isStatic) nilFn
+                                else KTProviderInstance(classDeclaration).also { fns.add(it) }.also {
+                                    val clName = classDeclaration.qualifiedName!!.asString()
+                                    if (inherit[clName] != null) {
+                                        it.inherit = inherit[clName]
+                                        it.inheritParent = providerAnnot.inherit
+                                    }
                                 }
-                            }
 
-                            classDeclaration.getDeclaredFunctions().mapNotNull {
-                                it.getAnnotationsByType(
-                                    LuaFunction::class
-                                ).firstOrNull()?.let { annot -> it to annot }
-                            }.forEach { (fn, annot) ->
-                                val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                val library = if(annot.library == "_G") providerAnnot.library else annot.library
-                                val overloadFns = ifn.getFunction(library, fnName)
-                                overloadFns.targets.add(
-                                    BindTargetFnKt(
-                                        fnName, fn, if (isStatic) null else classDeclaration, !annot.exportDoc
+                                classDeclaration.getDeclaredFunctions().mapNotNull {
+                                    it.getAnnotationsByType(
+                                        LuaFunction::class
+                                    ).firstOrNull()?.let { annot -> it to annot }
+                                }.forEach { (fn, annot) ->
+                                    val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
+                                    val library = if (annot.library == "_G") providerAnnot.library else annot.library
+                                    val overloadFns = ifn.getFunction(library, fnName)
+                                    overloadFns.targets.add(
+                                        BindTargetFnKt(
+                                            fnName, fn, if (isStatic) null else classDeclaration, !annot.exportDoc
+                                        )
                                     )
-                                )
-                                files.add(classDeclaration.containingFile!!)
-                            }
+                                    files.add(classDeclaration.containingFile!!)
+                                }
 
-                            classDeclaration.getDeclaredProperties().mapNotNull {
-                                it.getAnnotationsByType(
-                                    LuaProperty::class
-                                ).firstOrNull()?.let { annot -> it to annot }
-                            }.forEach { (fn, annot) ->
-                                val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                val library = if(annot.library == "_G") providerAnnot.library else annot.library
-                                if (annot.exportPropertySetter && fn.isMutable)
-                                    ifn.getFunction(library, "set_$fnName").targets.add(
-                                        BindTargetPropertySetterKt(
-                                            "set_$fnName",
+                                classDeclaration.getDeclaredProperties().mapNotNull {
+                                    it.getAnnotationsByType(
+                                        LuaProperty::class
+                                    ).firstOrNull()?.let { annot -> it to annot }
+                                }.forEach { (fn, annot) ->
+                                    val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
+                                    val library = if (annot.library == "_G") providerAnnot.library else annot.library
+                                    if (annot.exportPropertySetter && fn.isMutable)
+                                        ifn.getFunction(library, "set_$fnName").targets.add(
+                                            BindTargetPropertySetterKt(
+                                                "set_$fnName",
+                                                fn,
+                                                if (isStatic) null else classDeclaration,
+                                                !annot.exportDoc
+                                            )
+                                        )
+                                    ifn.getFunction(library, "get_$fnName").targets.add(
+                                        BindTargetPropertyGetterKt(
+                                            "get_$fnName",
                                             fn,
                                             if (isStatic) null else classDeclaration,
                                             !annot.exportDoc
                                         )
                                     )
-                                ifn.getFunction(library, "get_$fnName").targets.add(
-                                    BindTargetPropertyGetterKt(
-                                        "get_$fnName", fn, if (isStatic) null else classDeclaration, !annot.exportDoc
-                                    )
-                                )
-                                files.add(classDeclaration.containingFile!!)
+                                    files.add(classDeclaration.containingFile!!)
+                                }
                             }
                         })
                     }
