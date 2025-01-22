@@ -190,7 +190,7 @@ internal object ArgumentManager {
             declaredClass: KSClassDeclaration,
             param: KSValueParameter?
         ): Int {
-            builder.append("LuaFunc(engine, $index)")
+            builder.append("LuaFunc(engine, lua, $index)")
             return index + 1
         }
 

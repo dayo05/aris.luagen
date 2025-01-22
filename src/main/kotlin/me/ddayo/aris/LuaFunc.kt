@@ -3,9 +3,8 @@ package me.ddayo.aris
 import party.iroiro.luajava.Lua
 
 
-class LuaFunc(private val engine: LuaEngine, loc: Int = -1) {
+class LuaFunc(private val engine: LuaEngine, private val lua: Lua, loc: Int = -1) {
     private val task = engine.currentTask!!
-    private val lua = task.coroutine
     private val ref: Int
     init {
         if (!lua.isFunction(loc))
@@ -21,6 +20,6 @@ class LuaFunc(private val engine: LuaEngine, loc: Int = -1) {
         var a = 0
         for (x in values) a += engine.luaMain.pushNoInline(lua, x)
 
-        lua.pCall(a, 0)
+        lua.pCall(a, -1)
     }
 }
