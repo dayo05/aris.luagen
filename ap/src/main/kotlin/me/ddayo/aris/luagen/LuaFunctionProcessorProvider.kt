@@ -390,7 +390,6 @@ end
         abstract fun getFunction(library: String, name: String): AbstractBindTargetLua
 
         open val objectGenerated = StringBuilder()
-        open val refGenerated = StringBuilder()
         open val metatableGenerated = StringBuilder()
         var inherit: String? = null
         var inheritParent: String? = null
@@ -440,11 +439,6 @@ end
             appendLine("}")
         }
 
-        override val refGenerated: StringBuilder
-            get() = StringBuilder().apply {
-                append("var aris_${className.replace('.', '_')}_mt = -1")
-            }
-
         override val metatableGenerated: StringBuilder
             get() = StringBuilder().apply {
                 val cln = className.replace('.', '_')
@@ -470,9 +464,7 @@ end
                 }
 
                 inherit?.let {
-                    val inheritDecl = "aris_${it.replace(".", "_")}_mt".let {
-                        if (inheritParent?.isNotBlank() == true) "$inheritParent.$it" else it
-                    }
+                    val inheritDecl = "engine.inner[\"aris_${it.replace(".", "_")}_mt\"]!!"
                     appendLine(
                         """
                                 lua.newTable()
@@ -486,8 +478,7 @@ end
                 }
 
                 appendLine("lua.setField(-2, \"__index\")")
-                appendLine("aris_${cln}_mt = lua.ref()")
-                appendLine("engine.inner[\"aris_${cln}_mt\"] = aris_${cln}_mt")
+                appendLine("engine.inner[\"aris_${cln}_mt\"] = lua.ref()")
             }
     }
 
@@ -639,7 +630,6 @@ import me.ddayo.aris.*
 
 object $clName {"""
                         )
-                        appendLine(cls.joinToString("\n") { fn -> fn.refGenerated })
                         appendLine(
                             """
     fun initEngine(engine: LuaEngine) {
