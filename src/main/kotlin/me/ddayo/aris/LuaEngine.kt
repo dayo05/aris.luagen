@@ -1,7 +1,6 @@
 package me.ddayo.aris
 
 import me.ddayo.aris.gen.LuaGenerated
-import me.ddayo.aris.gen.LuaGenerated.LuaTask_LuaGenerated
 import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProvider
 import party.iroiro.luajava.Lua
@@ -11,6 +10,7 @@ import java.lang.ref.ReferenceQueue
 
 open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) -> Unit = {}) {
     enum class TaskStatus {
+        UNINITIALIZED,
         /**
          * Task loaded to lua engine but never executed yet
          */
@@ -42,7 +42,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
         FINISHED
     }
 
-    val inner = mutableMapOf<String, Int>()
+    val inner = mutableMapOf<String, Int>() // using this instead of Lua's way because this is (maybe) faster.
 
 
     // this is safe due initLua only tries to get `lua` instance this time.
@@ -66,46 +66,112 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
         private set
 
     fun loop() {
-        for (task in tasks) {
+        if(isDisposed)
+            throw IllegalStateException("Trying to loop disposed engine")
+
+        for(taskIdx in tasks.indices) {
+            val task = tasks[taskIdx]
             currentTask = task
             task.loop()
         }
+
         currentTask = null
         while(true) {
             val ref = ((arisRefQueue.poll() ?: break) as ArisPhantomReference)
             refs.remove(ref)
             if(ref.ref == -1) continue
-            ref.task?.let {
-                it.externalRefCount--
-            }
             lua.unref(ref.ref)
         }
     }
 
-    @ReferenceMayKeepAlive
+    var isDisposed = false
+        private set
+
+    fun dispose() {
+        isDisposed = true
+        lua.close()
+    }
+
     fun removeAllFinished() {
-        tasks.removeAll { it.taskStatus == TaskStatus.FINISHED && it.externalRefCount == 0 }
+        tasks.removeAll { it.taskStatus == TaskStatus.FINISHED }
     }
 
     open fun createTask(code: String, name: String, repeat: Boolean = false) =
-        LuaTask(code, name, repeat).also { tasks.add(it) }
+        LuaCodeTask(code, name, repeat).also {
+            it.init()
+            tasks.add(it)
+        }
 
     @LuaProvider
-    open inner class LuaTask(code: String, val name: String, val repeat: Boolean = false) :
-        ILuaStaticDecl by LuaTask_LuaGenerated {
+    open inner class LuaTask(val name: String, val initArgc: Int, val repeat: Boolean = false): ILuaStaticDecl by LuaGenerated.LuaTask_LuaGenerated {
         val engine = this@LuaEngine
-
-        var taskStatus = TaskStatus.INITIALIZED
+        var taskStatus = TaskStatus.UNINITIALIZED
             protected set
 
         lateinit var coroutine: Lua
             private set
 
-        var externalRefCount = 0
+        var refIdx: Int = -1
+            set(value) {
+                if(field != -1)
+                    throw Exception("Cannot rewrite refIdx")
+                field = value
+            }
 
-        private val refIdx: Int // function to executed inside coroutine
+        open fun init() {
+            if(refIdx == -1)
+                errorMessageHandler("Cannot init with refIdx -1")
+            else {
+                coroutine = lua.newThread()
+                coroutine.refGet(refIdx)
+                if(!coroutine.isFunction(-1))
+                    errorMessageHandler("Given data is not a function")
+                taskStatus = TaskStatus.INITIALIZED
+                refs.add(ArisPhantomReference(this, null, refIdx, arisRefQueue))
+            }
+        }
 
         open var isPaused = false
+
+        fun loop() {
+            if (isPaused) return
+            if (taskStatus != TaskStatus.YIELDED && taskStatus != TaskStatus.INITIALIZED) return
+            try {
+                val argc = if(taskStatus == TaskStatus.INITIALIZED) initArgc else 0
+                taskStatus = TaskStatus.RUNNING
+                if (!coroutine.resume(argc)) {
+                    coroutine.close()
+                    if (repeat) {
+                        init()
+                    } else taskStatus = TaskStatus.FINISHED
+                } else taskStatus = TaskStatus.YIELDED
+            } catch (e: LuaException) {
+                errorMessageHandler((e.message ?: "No message provided") + "\n" + e.stackTraceToString())
+                taskStatus = TaskStatus.RUNTIME_ERROR
+            }
+        }
+
+        open fun remove() {
+            tasks.remove(this)
+        }
+
+        fun restart() {
+            coroutine.close()
+            init()
+        }
+
+        fun ref(self: Any, ref: Int) {
+            refs.add(ArisPhantomReference(self, this, ref, arisRefQueue))
+        }
+
+        @LuaFunction("get_task_name")
+        @JvmName("get_name")
+        fun getName() = name
+    }
+
+    @LuaProvider
+    open inner class LuaCodeTask(code: String, name: String, repeat: Boolean = false) :
+        LuaTask(name, 0, repeat), ILuaStaticDecl by LuaGenerated.LuaCodeTask_LuaGenerated {
 
         init {
             val codeBuilder = StringBuilder()
@@ -124,69 +190,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
             ) {
                 lua.pCall(0, 1)
                 refIdx = lua.ref()
-                init()
-            } else refIdx = -1
-        }
-
-        private var resumeParam = 0
-        private fun init() {
-            externalRefCount = 0
-            coroutine = lua.newThread()
-            coroutine.refGet(refIdx) // code
-            resumeParam = 0
-            taskStatus = TaskStatus.INITIALIZED
-        }
-
-        private fun resume(arg: Int) {
-            try {
-                taskStatus = TaskStatus.RUNNING
-                if (!coroutine.resume(arg)) {
-                    coroutine.close()
-                    if (repeat) {
-                        init()
-                    } else taskStatus = TaskStatus.FINISHED
-                } else taskStatus = TaskStatus.YIELDED
-            } catch (e: LuaException) {
-                errorMessageHandler((e.message ?: "No message provided") + "\n" + e.stackTraceToString())
-                taskStatus = TaskStatus.RUNTIME_ERROR
             }
         }
-
-        fun loop() {
-            if (isPaused) return
-            if (taskStatus != TaskStatus.YIELDED && taskStatus != TaskStatus.INITIALIZED) return
-            resume(resumeParam)
-            resumeParam = 0
-        }
-
-        // unref code on Java object has been collected by GC
-        private val ref = refIdx
-        init {
-            refs.add(ArisPhantomReference(this, null, ref, arisRefQueue))
-        }
-
-        @ReferenceMayKeepAlive
-        open fun remove() {
-            if(externalRefCount != 0)
-                errorMessageHandler("Task $name removed with remaining $externalRefCount references")
-            tasks.remove(this)
-        }
-
-        @ReferenceMayKeepAlive
-        fun restart() {
-            if(externalRefCount != 0)
-                errorMessageHandler("Task $name restarted with remaining $externalRefCount references")
-            coroutine.close()
-            init()
-        }
-
-        fun ref(self: Any, ref: Int) {
-            externalRefCount++
-            refs.add(ArisPhantomReference(self, this, ref, arisRefQueue))
-        }
-
-        @LuaFunction("get_task_name")
-        @JvmName("get_name")
-        fun getName() = name
     }
 }

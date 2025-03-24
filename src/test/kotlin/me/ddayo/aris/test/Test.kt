@@ -150,7 +150,6 @@ class TestEngine(lua: Lua) : LuaEngine(lua, { println(it) }) {
     }
 }
 
-@OptIn(ReferenceMayKeepAlive::class)
 fun main() {
     val engine = TestEngine(LuaJit())
     engine.createTask(
