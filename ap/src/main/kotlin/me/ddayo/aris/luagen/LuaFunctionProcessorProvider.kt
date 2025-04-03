@@ -594,8 +594,7 @@ end
                                 }.forEach { (fn, annot) ->
                                     val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
                                     val library = if (annot.library == "_G") providerAnnot.library else annot.library
-                                    val overloadFns = ifn.getFunction(library, fnName) as IBindTargetProvider
-                                    overloadFns.targets.add(
+                                    ifn.getFunction(library, fnName).targets.add(
                                         BindTargetFnKt(
                                             fnName, fn, if (isStatic) null else classDeclaration, !annot.exportDoc
                                         )
@@ -611,7 +610,7 @@ end
                                     val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
                                     val library = if (annot.library == "_G") providerAnnot.library else annot.library
                                     if (annot.exportPropertySetter && fn.isMutable)
-                                        (ifn.getFunction(library, "set_$fnName") as IBindTargetProvider).targets.add(
+                                        ifn.getFunction(library, "set_$fnName").targets.add(
                                             BindTargetPropertySetterKt(
                                                 "set_$fnName",
                                                 fn,
@@ -619,7 +618,7 @@ end
                                                 !annot.exportDoc
                                             )
                                         )
-                                    (ifn.getFunction(library, "get_$fnName") as IBindTargetProvider).targets.add(
+                                    ifn.getFunction(library, "get_$fnName").targets.add(
                                         BindTargetPropertyGetterKt(
                                             "get_$fnName",
                                             fn,
