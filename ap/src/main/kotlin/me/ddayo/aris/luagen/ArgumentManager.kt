@@ -296,6 +296,9 @@ internal object ArgumentManager {
 
     fun intoProjectedStrInner(classDecl: KSClassDeclaration, sb: StringBuilder) {
         if(classDecl.parentDeclaration !is KSClassDeclaration) {
+            if(classDecl.qualifiedName == null) {
+                throw Exception("${classDecl.qualifiedName} is null for $classDecl")
+            }
             sb.append(classDecl.qualifiedName!!.asString())
             if (classDecl.typeParameters.isNotEmpty()) (0 until classDecl.typeParameters.size).joinTo(
                 sb, prefix = "<", postfix = ">"

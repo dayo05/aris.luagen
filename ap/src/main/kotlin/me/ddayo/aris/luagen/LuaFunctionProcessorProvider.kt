@@ -251,48 +251,64 @@ end
         }
     }
 
-    private abstract class AbstractBindTargetLua(
-        val name: String,
-        val targets: MutableList<AbstractBindTarget>
-    ) {
-        abstract val ktBind: StringBuilder
-        abstract val luaBind: StringBuilder
-
-        val docString by lazy {
-            StringBuilder().apply {
-                targets.forEach {
-                    if (it.isPrivate) return@forEach
-                    append(it.doc)
-                }
-            }
-        }
+    private interface ISourceProvider {
+        val ktBind: StringBuilder
+        val luaBind: StringBuilder
+        val docString: StringBuilder
     }
 
-    private class BindStaticTargetLua(
+    private class BindStaticLibraryTargetLua(
         val library: String,
-        name: String,
-        targets: MutableList<AbstractBindTarget>
-    ) : AbstractBindTargetLua(name, targets) {
-        val librarySp by lazy {
-            libraryFnCount.getOrPut(library) { 0 }
-        }
-        override val ktBind by lazy {
+        val targets: MutableMap<String, BindStaticTargetLua> = mutableMapOf(),
+        val children: MutableMap<String, BindStaticLibraryTargetLua> = mutableMapOf()
+    ): ISourceProvider {
+        override val ktBind: StringBuilder by lazy {
             StringBuilder().apply {
                 append(
-                    """    lua.getGlobal("$library")
+                    """    lua.getField(-1, "$library")
     if(lua.isNoneOrNil(-1)) {
         lua.pop(1)
         lua.newTable()
     }
                         """
                 )
+                targets.values.forEach { append(it.ktBind) }
+                children.values.forEach { append(it.ktBind) }
+                appendLine("lua.setField(-2, \"$library\")")
+            }
+        }
+
+        override val luaBind: StringBuilder by lazy {
+            StringBuilder().apply {
+                targets.values.forEach { append(it.luaBind) }
+                children.values.forEach { append(it.luaBind) }
+            }
+        }
+
+        override val docString: StringBuilder by lazy {
+            StringBuilder().apply {
+                targets.values.forEach { append(it.docString) }
+                children.values.forEach { append(it.docString) }
+            }
+        }
+    }
+
+    private interface IBindTargetProvider {
+        val targets: MutableList<AbstractBindTarget>
+    }
+
+    private class BindStaticTargetLua(
+        // this must include full library name
+        val library: String,
+        name: String,
+        override val targets: MutableList<AbstractBindTarget> = mutableListOf(),
+    ) : ISourceProvider, IBindTargetProvider {
+        override val ktBind: StringBuilder by lazy {
+            StringBuilder().apply {
                 targets.forEachIndexed { index, bindTargetKt ->
                     append(bindTargetKt.ktCallString)
-                    appendLine("lua.setField(-2, \"${name}_kt${index + librarySp}\")")
+                    appendLine("lua.setField(-2, \"${name}_kt${index}\")")
                 }
-                append("lua.setGlobal(\"$library\")")
-                if (libraryFnCount[library] == librarySp)
-                    libraryFnCount[library] = librarySp + targets.size
             }
         }
 
@@ -309,7 +325,7 @@ end
                 targets.forEachIndexed { index, bindTargetKt ->
                     append(
                         bindTargetKt.scoreCalcLua(
-                            "$library.${name}_kt${index + librarySp}"
+                            "$library.${name}_kt${index}"
                         )
                     )
                 }
@@ -319,18 +335,24 @@ end
 end
 """
                 )
-                if (libraryFnCount[library] == librarySp)
-                    libraryFnCount[library] = librarySp + targets.size
+            }
+        }
+
+        override val docString by lazy {
+            StringBuilder().apply {
+                targets.forEach {
+                    if (it.isPrivate) return@forEach
+                    append(it.doc)
+                }
             }
         }
     }
 
     private class BindInstanceTargetLua(
-        val library: String,
         name: String,
-        targets: MutableList<AbstractBindTarget>,
+        override val targets: MutableList<AbstractBindTarget>,
         val declaredClass: KSClassDeclaration
-    ) : AbstractBindTargetLua(name, targets) {
+    ) : ISourceProvider, IBindTargetProvider {
         override val ktBind by lazy {
             StringBuilder().apply {
                 targets.forEachIndexed { index, bindTargetKt ->
@@ -369,25 +391,39 @@ end
                 )
             }
         }
+
+        override val docString by lazy {
+            StringBuilder().apply {
+                targets.forEach {
+                    if (it.isPrivate) return@forEach
+                    append(it.doc)
+                }
+            }
+        }
     }
 
-    private abstract class AbstractKTProviderInstance(val inner: MutableMap<Pair<String, String>, AbstractBindTargetLua> = mutableMapOf()) {
-        val luaBindings
-            get() = StringBuilder().apply {
-                inner.values.joinTo(this, "\n") { it.luaBind }
-            }
+    private abstract class AbstractKTProviderInstance<T : ISourceProvider, F: IBindTargetProvider>() :
+        ISourceProvider {
+        val inner: MutableMap<String, T> = mutableMapOf()
+        override val luaBind by lazy {
+                    StringBuilder().apply {
+                        inner.values.joinTo(this, "\n") { it.luaBind }
+                    }
+                }
 
-        open val ktBindings
-            get() = StringBuilder().apply {
+        override val ktBind by lazy {
+            StringBuilder().apply {
                 inner.values.joinTo(this, "\n") { it.ktBind }
             }
+        }
 
-        val docStrings
-            get() = StringBuilder().apply {
+        override val docString by lazy {
+            StringBuilder().apply {
                 inner.values.map { it.docString }.filter { it.isNotBlank() }.joinTo(this, "\n\n")
             }
+        }
 
-        abstract fun getFunction(library: String, name: String): AbstractBindTargetLua
+        abstract fun getFunction(library: String, name: String): F
 
         open val objectGenerated = StringBuilder()
         open val metatableGenerated = StringBuilder()
@@ -395,29 +431,40 @@ end
         var inheritParent: String? = null
     }
 
-    private class KTObjectProviderInstance : AbstractKTProviderInstance() {
-        override fun getFunction(library: String, name: String) = inner.getOrPut(library to name) {
-            BindStaticTargetLua(
-                library, name, mutableListOf()
-            )
+    private class KTObjectProviderInstance : AbstractKTProviderInstance<BindStaticLibraryTargetLua, BindStaticTargetLua>() {
+        override fun getFunction(library: String, name: String): BindStaticTargetLua {
+            val sp = library.split(".")
+            var cur = inner.getOrPut(sp[0]) { BindStaticLibraryTargetLua(sp[0]) }
+            for(i in 1 until (sp.size))
+                cur = cur.children.getOrPut(sp[i]) { BindStaticLibraryTargetLua(sp[i]) }
+            return cur.targets.getOrPut(name) { BindStaticTargetLua(library, name) }
+        }
+
+        override val ktBind: StringBuilder by lazy {
+            StringBuilder().apply {
+                appendLine("lua.getGlobal(\"_G\")")
+                append(super.ktBind)
+                appendLine("lua.pop(1)")
+            }
         }
     }
 
-    private class KTProviderInstance(val declaredClass: KSClassDeclaration) : AbstractKTProviderInstance() {
-        override fun getFunction(library: String, name: String) = inner.getOrPut(library to name) {
+    private class KTProviderInstance(val declaredClass: KSClassDeclaration) :
+        AbstractKTProviderInstance<BindInstanceTargetLua, BindInstanceTargetLua>() {
+        override fun getFunction(library: String, name: String) = inner.getOrPut(name) {
             BindInstanceTargetLua(
-                library, name, mutableListOf(), declaredClass
+                name, mutableListOf(), declaredClass
             )
         }
 
         val className = declaredClass.qualifiedName!!.asString()
         val simpleName = declaredClass.simpleName.asString()
 
-        override val ktBindings: StringBuilder
+        override val ktBind: StringBuilder
             get() = StringBuilder().apply {
                 appendLine("lua.newTable()")
 
-                append(super.ktBindings)
+                append(super.ktBind)
 
                 appendLine(
                     "lua.setGlobal(\"aris_${
@@ -457,8 +504,8 @@ end
                 inner.keys.forEach {
                     appendLine(
                         """
-                                    lua.getGlobal("aris_${cln}_${it.second}")
-                                    lua.setField(-2, "${it.second}")
+                                    lua.getGlobal("aris_${cln}_${it}")
+                                    lua.setField(-2, "$it")
                                     """
                     )
                 }
@@ -487,7 +534,6 @@ end
         private val luaProviderAnnotationName = LuaProvider::class.java.canonicalName
         internal lateinit var parResolved: ParameterCache private set
         internal lateinit var logger: KSPLogger private set
-        val libraryFnCount = mutableMapOf<String, Int>()
     }
 
     @OptIn(KspExperimental::class)
@@ -496,7 +542,7 @@ end
         return object : SymbolProcessor {
             val files = mutableSetOf<KSFile>()
 
-            val functions = mutableMapOf<String, MutableList<AbstractKTProviderInstance>>()
+            val functions = mutableMapOf<String, MutableList<AbstractKTProviderInstance<*, *>>>()
 
             override fun process(resolver: Resolver): List<KSAnnotated> {
                 parResolved = ParameterCache.init(resolver)
@@ -548,7 +594,7 @@ end
                                 }.forEach { (fn, annot) ->
                                     val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
                                     val library = if (annot.library == "_G") providerAnnot.library else annot.library
-                                    val overloadFns = ifn.getFunction(library, fnName)
+                                    val overloadFns = ifn.getFunction(library, fnName) as IBindTargetProvider
                                     overloadFns.targets.add(
                                         BindTargetFnKt(
                                             fnName, fn, if (isStatic) null else classDeclaration, !annot.exportDoc
@@ -565,7 +611,7 @@ end
                                     val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
                                     val library = if (annot.library == "_G") providerAnnot.library else annot.library
                                     if (annot.exportPropertySetter && fn.isMutable)
-                                        ifn.getFunction(library, "set_$fnName").targets.add(
+                                        (ifn.getFunction(library, "set_$fnName") as IBindTargetProvider).targets.add(
                                             BindTargetPropertySetterKt(
                                                 "set_$fnName",
                                                 fn,
@@ -573,7 +619,7 @@ end
                                                 !annot.exportDoc
                                             )
                                         )
-                                    ifn.getFunction(library, "get_$fnName").targets.add(
+                                    (ifn.getFunction(library, "get_$fnName") as IBindTargetProvider).targets.add(
                                         BindTargetPropertyGetterKt(
                                             "get_$fnName",
                                             fn,
@@ -617,13 +663,12 @@ end
 
                 functions.entries.forEach { (clName, cls) ->
                     logger.info("Generating: $clName")
-                    val luaCode = cls.joinToString("\n") { fn -> fn.luaBindings }
+                    val luaCode = cls.joinToString("\n") { fn -> fn.luaBind }
 
                     val ktCode = StringBuilder().apply {
                         appendLine(
                             """package $pkg
 
-import me.ddayo.aris.LuaMultiReturn
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 import me.ddayo.aris.*
@@ -638,7 +683,7 @@ object $clName {"""
 """
                         )
                         // Add all kotlin binding code(overloading resolved)
-                        appendLine(cls.joinToString("\n") { fn -> fn.ktBindings })
+                        appendLine(cls.joinToString("\n") { fn -> fn.ktBind })
                         // Add all lua code(overloading resolved here)
                         appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
                         appendLine("lua.pCall(0, 0)")
@@ -665,7 +710,7 @@ object $clName {"""
                     if (environment.options["export_doc"] == "true") environment.codeGenerator.createNewFileByPath(
                         Dependencies(false), "${clName}_doc", "md"
                     ).writer().apply {
-                        write(cls.joinToString("\n\n") { it.docStrings })
+                        write(cls.joinToString("\n\n") { it.docString })
                         close()
                     }
                 }
