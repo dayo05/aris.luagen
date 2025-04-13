@@ -14,7 +14,7 @@ class LuaFunc(private val engine: LuaEngine, private val lua: Lua, loc: Int = -1
         task.ref(this, ref)
     }
 
-    fun call(vararg values: Any) {
+    fun call(vararg values: Any?) {
         lua.refGet(ref)
 
         var a = 0
@@ -23,7 +23,7 @@ class LuaFunc(private val engine: LuaEngine, private val lua: Lua, loc: Int = -1
         lua.pCall(a, -1)
     }
 
-    fun callAsTask(vararg values: Any): LuaEngine.LuaTask {
+    fun callAsTask(vararg values: Any?): LuaEngine.LuaTask {
         // TODO: maybe there are better implementation...
         val task = engine.LuaTask(task.name + "_function", values.size)
         task.refIdx = ref
@@ -38,7 +38,7 @@ class LuaFunc(private val engine: LuaEngine, private val lua: Lua, loc: Int = -1
         return task
     }
 
-    fun <T> await(cr: SequenceScope<CoroutineProvider.CoroutineReturn<T>>, vararg values: Any) = cr.run {
+    fun <T> await(cr: SequenceScope<CoroutineProvider.CoroutineReturn<T>>, vararg values: Any?) = cr.run {
             val task = callAsTask(*values)
             CoroutineProvider.CoroutineReturn.yield<T> {
                 !engine.tasks.contains(task)
