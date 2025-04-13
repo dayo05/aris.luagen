@@ -103,7 +103,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
         }
 
     @LuaProvider
-    open inner class LuaTask(val name: String, val initArgc: Int, val repeat: Boolean = false): ILuaStaticDecl by LuaGenerated.LuaTask_LuaGenerated {
+    open inner class LuaTask(val name: String, val repeat: Boolean = false): ILuaStaticDecl by LuaGenerated.LuaTask_LuaGenerated {
         val engine = this@LuaEngine
         var taskStatus = TaskStatus.UNINITIALIZED
             protected set
@@ -132,6 +132,12 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
         }
 
         open var isPaused = false
+
+        var initArgc = 0
+            set(value) {
+                if(field != 0) throw IllegalStateException("Cannot rewrite initArgc")
+                field = value
+            }
 
         fun loop() {
             if (isPaused) return
@@ -171,7 +177,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
 
     @LuaProvider
     open inner class LuaCodeTask(code: String, name: String, repeat: Boolean = false) :
-        LuaTask(name, 0, repeat), ILuaStaticDecl by LuaGenerated.LuaCodeTask_LuaGenerated {
+        LuaTask(name, repeat), ILuaStaticDecl by LuaGenerated.LuaCodeTask_LuaGenerated {
 
         init {
             val codeBuilder = StringBuilder()
