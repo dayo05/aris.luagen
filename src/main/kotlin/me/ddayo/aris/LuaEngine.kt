@@ -58,12 +58,19 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
     }
 
     private val refs = mutableListOf<ArisPhantomReference>()
+    fun ref(ref: ArisPhantomReference) {
+        refs.add(ref)
+        refStatus[ref.ref] = refStatus.getOrDefault(ref.ref, 0) + 1
+    }
+
     private val arisRefQueue = ReferenceQueue<Any>()
 
     val tasks = mutableListOf<LuaTask>()
 
     var currentTask: LuaTask? = null
         private set
+
+    val refStatus = mutableMapOf<Int, Int>()
 
     fun loop() {
         if(isDisposed)
@@ -81,6 +88,8 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
         while(true) {
             val ref = ((arisRefQueue.poll() ?: break) as ArisPhantomReference)
             refs.remove(ref)
+            refStatus[ref.ref] = refStatus[ref.ref]!! - 1
+            if(refStatus[ref.ref]!! == 0) continue
             if(ref.ref == -1) continue
             lua.unref(ref.ref)
         }
@@ -129,7 +138,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
                 if(!coroutine.isFunction(-1))
                     errorMessageHandler("Given data is not a function")
                 taskStatus = TaskStatus.INITIALIZED
-                refs.add(ArisPhantomReference(this, null, refIdx, arisRefQueue))
+                engine.ref(ArisPhantomReference(this, null, refIdx, arisRefQueue))
             }
         }
 
@@ -172,7 +181,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
         }
 
         fun ref(self: Any, ref: Int) {
-            refs.add(ArisPhantomReference(self, this, ref, arisRefQueue))
+            engine.ref(ArisPhantomReference(self, this, ref, arisRefQueue))
         }
 
         @LuaFunction("get_task_name")

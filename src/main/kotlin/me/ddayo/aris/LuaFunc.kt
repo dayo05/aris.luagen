@@ -31,7 +31,9 @@ class LuaFunc(val engine: LuaEngine, private val lua: Lua, loc: Int = -1) : Coro
     fun callAsTaskRawArg(arg: LuaFunc.(task: LuaEngine.LuaTask) -> Int): LuaEngine.LuaTask {
         // TODO: maybe there are better implementation...
         val task = engine.LuaTask(task.name + "_function")
-        task.refIdx = ref
+        lua.refGet(ref)
+        task.refIdx = lua.ref()
+
         task.init()
         task.initArgc = arg(task)
 
