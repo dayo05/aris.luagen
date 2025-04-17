@@ -69,10 +69,12 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
         if(isDisposed)
             throw IllegalStateException("Trying to loop disposed engine")
 
-        for(taskIdx in tasks.indices) {
+        var taskIdx = 0
+        while(taskIdx < tasks.size) {
             val task = tasks[taskIdx]
             currentTask = task
             task.loop()
+            taskIdx++
         }
 
         currentTask = null
@@ -149,7 +151,10 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
                     coroutine.close()
                     if (repeat) {
                         init()
-                    } else taskStatus = TaskStatus.FINISHED
+                    } else {
+                        taskStatus = TaskStatus.FINISHED
+                        engine.tasks.remove(this)
+                    }
                 } else taskStatus = TaskStatus.YIELDED
             } catch (e: LuaException) {
                 errorMessageHandler((e.message ?: "No message provided") + "\n" + e.stackTraceToString())
