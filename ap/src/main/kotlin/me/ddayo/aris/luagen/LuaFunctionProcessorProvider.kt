@@ -595,7 +595,7 @@ end
                                 val library = if (annot.library == "_G") providerAnnot.library else annot.library
                                 ifn.getFunction(library, fnName).targets.add(
                                     BindTargetFnKt(
-                                        fnName, fn, if (isStatic) null else classDeclaration, !annot.exportDoc
+                                        if(isStatic && library != "_G") "$library.$fnName" else fnName, fn, if (isStatic) null else classDeclaration, !annot.exportDoc
                                     )
                                 )
                                 files.add(classDeclaration.containingFile!!)
