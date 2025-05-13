@@ -16,10 +16,44 @@ internal object ArgumentManager {
             param: KSValueParameter?
         ): Int {
             TODO()
-            return -1
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = param?.isVararg == true
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            TODO()
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            TODO()
+        }
+    }
+
+    class CoroutineHandlerArgument: JavaObjectArgument() {
+        override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.coroutineResolved.isAssignableFrom(type)
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docStringBuilder: MutableList<String>
+        ) {
+
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+
+        }
     }
 
     class StringArgument : Argument() {
@@ -34,6 +68,22 @@ internal object ArgumentManager {
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.stringResolved.isAssignableFrom(type)
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("string")
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: string")
+        }
     }
 
     open class LongArgument : Argument() {
@@ -48,6 +98,22 @@ internal object ArgumentManager {
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.longResolved.isAssignableFrom(type)
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("number")
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: number")
+        }
     }
 
     class IntArgument : LongArgument() {
@@ -107,6 +173,22 @@ internal object ArgumentManager {
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.doubleResolved.isAssignableFrom(type)
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docStringBuilder: MutableList<String>
+        ) {
+            docStringBuilder.add("number")
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: number")
+        }
     }
 
     class FloatArgument : DoubleArgument() {
@@ -137,6 +219,22 @@ internal object ArgumentManager {
 
         override fun isValid(type: KSType, param: KSValueParameter?) =
             parResolved.booleanResolved.isAssignableFrom(type)
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("boolean")
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: boolean")
+        }
     }
 
     class DefaultJavaObjectArgument : Argument() {
@@ -151,6 +249,22 @@ internal object ArgumentManager {
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = true
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add(getFullNestedClassName(declaredClass))
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: ${getFullNestedClassName(declaredClass)}")
+        }
     }
 
     class ListArgument : Argument() {
@@ -165,6 +279,22 @@ internal object ArgumentManager {
         }
 
         override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.listResolved.isAssignableFrom(type)
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("List")
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: List")
+        }
     }
 
     class EngineArgument : Argument() {
@@ -181,6 +311,22 @@ internal object ArgumentManager {
         @OptIn(KspExperimental::class)
         override fun isValid(type: KSType, param: KSValueParameter?) =
             param?.getAnnotationsByType(RetrieveEngine::class)?.any() == true
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+
+        }
     }
 
     class LuaFuncArgument : Argument() {
@@ -196,9 +342,25 @@ internal object ArgumentManager {
 
         override fun isValid(type: KSType, param: KSValueParameter?) =
             parResolved.luaFuncResolved.isAssignableFrom(type)
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docStringBuilder: MutableList<String>
+        ) {
+            docStringBuilder.add("function")
+        }
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: function")
+        }
     }
 
-    class JavaObjectArgument : Argument() {
+    open class JavaObjectArgument : Argument() {
         private var initStackPos = -1
         override fun init(builder: StringBuilder, currentStackPos: Int): Int {
             initStackPos = currentStackPos
@@ -206,7 +368,12 @@ internal object ArgumentManager {
             return currentStackPos + 1
         }
 
-        override fun preProcess(builder: StringBuilder, currentIndex: Int, currentStackPos: Int, param: KSValueParameter?): Int {
+        override fun preProcess(
+            builder: StringBuilder,
+            currentIndex: Int,
+            currentStackPos: Int,
+            param: KSValueParameter?
+        ): Int {
             builder.appendLine("lua.getMetatable($currentIndex)")
             builder.appendLine("lua.pushValue(-${currentStackPos - initStackPos + 1})")
             builder.appendLine("lua.setMetatable($currentIndex)")
@@ -238,7 +405,24 @@ internal object ArgumentManager {
             return currentStackPos - 1
         }
 
-        override fun isValid(type: KSType, param: KSValueParameter?) = parResolved.staticDeclResolved.isAssignableFrom(type)
+        override fun isValid(type: KSType, param: KSValueParameter?) =
+            parResolved.staticDeclResolved.isAssignableFrom(type)
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: ${getFullNestedClassName(declaredClass)}")
+        }
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add(getFullNestedClassName(declaredClass))
+        }
     }
 
     abstract class Argument {
@@ -246,7 +430,12 @@ internal object ArgumentManager {
             return currentStackPos
         }
 
-        open fun preProcess(builder: StringBuilder, currentIndex: Int, currentStackPos: Int, param: KSValueParameter?): Int {
+        open fun preProcess(
+            builder: StringBuilder,
+            currentIndex: Int,
+            currentStackPos: Int,
+            param: KSValueParameter?
+        ): Int {
             return currentStackPos
         }
 
@@ -257,13 +446,26 @@ internal object ArgumentManager {
             param: KSValueParameter?
         ): Int
 
-        open fun postProcess(builder: StringBuilder, currentIndex: Int, currentStackPos: Int, param: KSValueParameter?): Int {
+        open fun postProcess(
+            builder: StringBuilder,
+            currentIndex: Int,
+            currentStackPos: Int,
+            param: KSValueParameter?
+        ): Int {
             return currentStackPos
         }
 
         open fun finish(builder: StringBuilder, currentStackPos: Int): Int {
             return currentStackPos
         }
+
+        abstract fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        )
+
+        abstract fun resolveDocSignature(param: KSValueParameter?, declaredClass: KSClassDeclaration, docStringBuilder: MutableList<String>)
 
         private var isProcessed = false
 
@@ -295,16 +497,15 @@ internal object ArgumentManager {
     }
 
     fun intoProjectedStrInner(classDecl: KSClassDeclaration, sb: StringBuilder) {
-        if(classDecl.parentDeclaration !is KSClassDeclaration) {
-            if(classDecl.qualifiedName == null) {
+        if (classDecl.parentDeclaration !is KSClassDeclaration) {
+            if (classDecl.qualifiedName == null) {
                 throw Exception("${classDecl.qualifiedName} is null for $classDecl")
             }
             sb.append(classDecl.qualifiedName!!.asString())
             if (classDecl.typeParameters.isNotEmpty()) (0 until classDecl.typeParameters.size).joinTo(
                 sb, prefix = "<", postfix = ">"
             ) { "*" }
-        }
-        else {
+        } else {
             intoProjectedStrInner(classDecl.parentDeclaration as KSClassDeclaration, sb)
             sb.append(".")
             sb.append(classDecl.simpleName.asString())
@@ -320,9 +521,27 @@ internal object ArgumentManager {
         return sb.toString()
     }
 
+    fun getFullNestedClassName(classDeclaration: KSClassDeclaration): String {
+        val classNameList = mutableListOf<String>()
+        var currentClass = classDeclaration
+
+        // Traverse through the parent classes to get the full name
+        while (currentClass.parentDeclaration != null) {
+            classNameList.add(currentClass.simpleName.asString()) // Add the current class to the list
+            currentClass = currentClass.parentDeclaration as KSClassDeclaration
+        }
+
+        // Add the outermost class (the top-level class)
+        classNameList.add(currentClass.simpleName.asString())
+
+        // Reverse the list and join with dots to get the full nested class name
+        return classNameList.reversed().joinToString(".")
+    }
+
     val argFilters
         get() = listOf(
             VarargArgument(),
+            CoroutineHandlerArgument(),
             StringArgument(),
             LongArgument(),
             IntArgument(),

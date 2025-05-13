@@ -47,16 +47,4 @@ internal data class ParameterCache(
             resolver.getClassDeclarationByName("me.ddayo.aris.ILuaStaticDecl")!!.asStarProjectedType(),
         )
     }
-
-    fun getLuaFriendlyName(decl: KSType): String {
-        if(numberResolved.isAssignableFrom(decl))
-            return "Number"
-        if(stringResolved.isAssignableFrom(decl))
-            return "String"
-        if(booleanResolved.isAssignableFrom(decl))
-            return "Boolean"
-        if(luaFuncResolved.isAssignableFrom(decl))
-            return "Function"
-        return decl.declaration.simpleName.asString()
-    }
 }

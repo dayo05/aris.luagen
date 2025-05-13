@@ -22,29 +22,51 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
         val preBuilder = StringBuilder()
         val mainBuilder = StringBuilder()
-        var postBuilder = StringBuilder()
+        val postBuilder = StringBuilder()
 
         private var svp = 1
         private var sip = 1
 
+        val docSignatureBuilder = mutableListOf<String>()
+
+        /**
+         * Get valid argument for provided type and value parameter
+         * @param type type to check
+         * @param vp value parameter to get argument. this can be null in case of `this` or used for return
+         */
+        fun getProcessor(type: KSType, vp: KSValueParameter?): ArgumentManager.Argument =
+            processor.first { it.isValid(type, vp) }
+
+        fun getLuaFriendlyName(type: KSType) = mutableListOf<String>().also {
+                try {
+                    val processor = getProcessor(type, null)
+                    processor.resolveDocSignature(null, type.declaration as KSClassDeclaration, it)
+                } catch(e: Exception) {
+                    logger.warn(e.stackTraceToString())
+                }
+            }.joinToString(", ")
+
         /**
          * Append processed string to matching KSValueParameter into each builder
+         * @param arg expected argument type
          * @param type type to append
          * @param vp actual KSValueParameter to append. this can be null if this mentions `this`
          */
-        protected fun proc(type: KSType, vp: KSValueParameter?) {
-            val _postBuilder = StringBuilder()
-            val p = processor.first { it.isValid(type, vp) }
+        protected fun proc(
+            arg: ArgumentManager.Argument,
+            type: KSType,
+            vp: KSValueParameter?
+        ) {
+            val p = arg
                 .process(
                     preBuilder,
                     mainBuilder,
-                    _postBuilder,
+                    postBuilder,
                     svp,
                     sip,
                     vp,
                     type.declaration as KSClassDeclaration
                 )
-            postBuilder = _postBuilder.append(postBuilder)
             svp = p.first
             sip = p.second
         }
@@ -126,24 +148,6 @@ end
         val ptResolved: MutableList<Pair<KSValueParameter?, KSType>> =
             funcCall.parameters.map { it to it.type.resolve() }.toMutableList()
 
-        val docSignature =
-            funcCall.parameters.joinToString(", ") { "${it.name?.asString()}: ${parResolved.getLuaFriendlyName(it.type.resolve())}" }
-
-        // override val doc = funcCall.docString ?: ""
-        override val doc = StringBuilder().apply {
-            if (declaredClass == null) append("## $luaTargetName(${docSignature})")
-            else append("## ${declaredClass.simpleName.asString()}:$luaTargetName(${docSignature})")
-            if (returnResolved != null && !returnResolved.isAssignableFrom(parResolved.unitResolved))
-                appendLine(" -> ${parResolved.getLuaFriendlyName(returnResolved)}")
-            else appendLine()
-            funcCall.docString?.let { doc ->
-                appendLine("```")
-                append(' ')
-                appendLine(doc.trim())
-                appendLine("```")
-            }
-        }
-
         init {
             if (returnResolved?.let { parResolved.unitResolved.isAssignableFrom(it) } == false)
                 mainBuilder.append("val rt = ")
@@ -151,7 +155,7 @@ end
             declaredClass?.let { cl ->
                 mainBuilder.append("(")
                 val ty = cl.asStarProjectedType()
-                proc(ty, null)
+                proc(getProcessor(ty, null), ty, null)
                 mainBuilder.append(").")
                     .append(funcCall.simpleName.asString())
             } ?: run {
@@ -161,10 +165,29 @@ end
             if (ptResolved.isNotEmpty()) {
                 ptResolved.forEachIndexed { index, (vp, type) ->
                     if (index != 0) mainBuilder.append(", ")
-                    proc(type, vp)
+                    val processor = getProcessor(type, vp)
+                    proc(processor, type, vp)
+                    processor.resolveDocSignatureWithName(vp, type.declaration as KSClassDeclaration, docSignatureBuilder)
                 }
             }
             mainBuilder.append(")")
+        }
+
+        val docSignature =
+            docSignatureBuilder.joinToString(", ")
+
+        override val doc = StringBuilder().apply {
+            if (declaredClass == null) append("## $luaTargetName(${docSignature})")
+            else append("## ${declaredClass.simpleName.asString()}:$luaTargetName(${docSignature})")
+            if (returnResolved != null && !returnResolved.isAssignableFrom(parResolved.unitResolved))
+                appendLine(" -> ${getLuaFriendlyName(returnResolved)}")
+            else appendLine()
+            funcCall.docString?.let { doc ->
+                appendLine("```")
+                append(' ')
+                appendLine(doc.trim())
+                appendLine("```")
+            }
         }
     }
 
@@ -177,13 +200,9 @@ end
         override val returnResolved = property.type.resolve().starProjection()
         override val doc = StringBuilder().apply {
             if (declaredClass == null)
-                appendLine("## $luaTargetName() -> ${parResolved.getLuaFriendlyName(returnResolved)}")
+                appendLine("## $luaTargetName() -> ${getLuaFriendlyName(returnResolved)}")
             else appendLine(
-                "## ${declaredClass.simpleName.asString()}:$luaTargetName() -> ${
-                    parResolved.getLuaFriendlyName(
-                        returnResolved
-                    )
-                }"
+                "## ${declaredClass.simpleName.asString()}:$luaTargetName() -> ${getLuaFriendlyName(returnResolved)}"
             )
 
             property.docString?.let { doc ->
@@ -199,7 +218,8 @@ end
             declaredClass?.let { cl ->
                 mainBuilder.append("(")
                 val ty = cl.asStarProjectedType()
-                proc(ty, null)
+                val processor = getProcessor(ty, null)
+                proc(processor, ty, null)
                 mainBuilder.append(").")
                     .append(property.simpleName.asString())
             } ?: run {
@@ -219,13 +239,9 @@ end
 
         override val doc = StringBuilder().apply {
             if (declaredClass == null)
-                appendLine("## $luaTargetName(new_value: ${parResolved.getLuaFriendlyName(typeResolved)})")
+                appendLine("## $luaTargetName(new_value: ${getLuaFriendlyName(typeResolved)})")
             else appendLine(
-                "## ${declaredClass.simpleName.asString()}:$luaTargetName(new_value: ${
-                    parResolved.getLuaFriendlyName(
-                        typeResolved
-                    )
-                })"
+                "## ${declaredClass.simpleName.asString()}:$luaTargetName(new_value: ${getLuaFriendlyName(typeResolved)})"
             )
 
             property.docString?.let { doc ->
@@ -240,14 +256,16 @@ end
             declaredClass?.let { cl ->
                 mainBuilder.append("(")
                 val ty = cl.asStarProjectedType()
-                proc(ty, null)
+                val processor = getProcessor(ty, null)
+                proc(processor, ty, null)
                 mainBuilder.append(").")
                     .append(property.simpleName.asString())
             } ?: run {
                 mainBuilder.append(property.qualifiedName!!.asString())
             }
             mainBuilder.append(" = ")
-            proc(typeResolved, null)
+            val processor = getProcessor(typeResolved, null)
+            proc(processor, typeResolved, null)
         }
     }
 
@@ -261,7 +279,7 @@ end
         val library: String,
         val targets: MutableMap<String, BindStaticTargetLua> = mutableMapOf(),
         val children: MutableMap<String, BindStaticLibraryTargetLua> = mutableMapOf()
-    ): ISourceProvider {
+    ) : ISourceProvider {
         override val ktBind: StringBuilder by lazy {
             StringBuilder().apply {
                 append(
@@ -402,14 +420,14 @@ end
         }
     }
 
-    private abstract class AbstractKTProviderInstance<T : ISourceProvider, F: IBindTargetProvider>() :
+    private abstract class AbstractKTProviderInstance<T : ISourceProvider, F : IBindTargetProvider>() :
         ISourceProvider {
         val inner: MutableMap<String, T> = mutableMapOf()
         override val luaBind by lazy {
-                    StringBuilder().apply {
-                        inner.values.joinTo(this, "\n") { it.luaBind }
-                    }
-                }
+            StringBuilder().apply {
+                inner.values.joinTo(this, "\n") { it.luaBind }
+            }
+        }
 
         override val ktBind by lazy {
             StringBuilder().apply {
@@ -431,11 +449,12 @@ end
         var inheritParent: String? = null
     }
 
-    private class KTObjectProviderInstance : AbstractKTProviderInstance<BindStaticLibraryTargetLua, BindStaticTargetLua>() {
+    private class KTObjectProviderInstance :
+        AbstractKTProviderInstance<BindStaticLibraryTargetLua, BindStaticTargetLua>() {
         override fun getFunction(library: String, name: String): BindStaticTargetLua {
             val sp = library.split(".")
             var cur = inner.getOrPut(sp[0]) { BindStaticLibraryTargetLua(sp[0]) }
-            for(i in 1 until (sp.size))
+            for (i in 1 until (sp.size))
                 cur = cur.children.getOrPut(sp[i]) { BindStaticLibraryTargetLua(sp[i]) }
             return cur.targets.getOrPut(name) { BindStaticTargetLua(library, name) }
         }
@@ -595,7 +614,10 @@ end
                                 val library = if (annot.library == "_G") providerAnnot.library else annot.library
                                 ifn.getFunction(library, fnName).targets.add(
                                     BindTargetFnKt(
-                                        if(isStatic && library != "_G") "$library.$fnName" else fnName, fn, if (isStatic) null else classDeclaration, !annot.exportDoc
+                                        if (isStatic && library != "_G") "$library.$fnName" else fnName,
+                                        fn,
+                                        if (isStatic) null else classDeclaration,
+                                        !annot.exportDoc
                                     )
                                 )
                                 files.add(classDeclaration.containingFile!!)
