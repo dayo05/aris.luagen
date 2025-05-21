@@ -690,7 +690,7 @@ end
 
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
-import me.ddayo.aris.*
+import me.ddayo.aris.luagen.*
 
 object $clName {"""
                         )

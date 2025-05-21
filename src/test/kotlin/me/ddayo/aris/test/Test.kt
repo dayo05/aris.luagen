@@ -9,6 +9,11 @@ import me.ddayo.aris.luagen.LuaFunction
 import me.ddayo.aris.luagen.LuaProperty
 import me.ddayo.aris.luagen.RetrieveEngine
 import me.ddayo.aris.luagen.LuaProvider
+import me.ddayo.aris.luagen.CoroutineProvider
+import me.ddayo.aris.luagen.ILuaStaticDecl
+import me.ddayo.aris.luagen.LuaEngine
+import me.ddayo.aris.luagen.LuaFunc
+import me.ddayo.aris.luagen.LuaMultiReturn
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.luajit.LuaJit
 import kotlin.random.Random

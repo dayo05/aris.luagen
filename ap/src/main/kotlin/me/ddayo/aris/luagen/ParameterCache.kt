@@ -41,10 +41,10 @@ internal data class ParameterCache(
             resolver.getClassDeclarationByName<Class<*>>()!!.asStarProjectedType(),
             resolver.getClassDeclarationByName<Unit>()!!.asStarProjectedType(),
             resolver.getClassDeclarationByName("party.iroiro.luajava.value.LuaValue")!!.asStarProjectedType(),
-            resolver.getClassDeclarationByName("me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration")!!
+            resolver.getClassDeclarationByName("me.ddayo.aris.luagen.CoroutineProvider.LuaCoroutineIntegration")!!
                 .asStarProjectedType(),
-            resolver.getClassDeclarationByName("me.ddayo.aris.LuaFunc")!!.asStarProjectedType(),
-            resolver.getClassDeclarationByName("me.ddayo.aris.ILuaStaticDecl")!!.asStarProjectedType(),
+            resolver.getClassDeclarationByName("me.ddayo.aris.luagen.LuaFunc")!!.asStarProjectedType(),
+            resolver.getClassDeclarationByName("me.ddayo.aris.luagen.ILuaStaticDecl")!!.asStarProjectedType(),
         )
     }
 }

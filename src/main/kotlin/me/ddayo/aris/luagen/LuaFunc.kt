@@ -1,4 +1,4 @@
-package me.ddayo.aris
+package me.ddayo.aris.luagen
 
 import party.iroiro.luajava.Lua
 
