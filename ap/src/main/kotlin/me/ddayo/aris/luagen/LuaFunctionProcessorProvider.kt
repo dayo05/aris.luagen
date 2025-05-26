@@ -652,10 +652,10 @@ end
                         })
                     }
 
-                    classes.forEach { (_, current) ->
+                    classes.forEach { (currentProvider, current) ->
                         current.superTypes.map { it.resolve().declaration }.filterIsInstance<KSClassDeclaration>()
                             .forEach { parent ->
-                                if (parent.isAnnotationPresent(LuaProvider::class)) {
+                                if (parent.getAnnotationsByType(LuaProvider::class).any { it.className == currentProvider.className}) {
                                     inherit[current.qualifiedName!!.asString()] = parent.qualifiedName!!.asString()
                                     environment.logger.info("Inherit: ${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
 
