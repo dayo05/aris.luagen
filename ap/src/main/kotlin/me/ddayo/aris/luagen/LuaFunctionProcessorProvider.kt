@@ -22,7 +22,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
         val preBuilder = StringBuilder()
         val mainBuilder = StringBuilder()
-        val postBuilder = StringBuilder()
+        var postBuilder = StringBuilder()
 
         private var svp = 1
         private var sip = 1
@@ -46,6 +46,18 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                 }
             }.joinToString(", ")
 
+        var classDeclarationBias = 0
+            private set
+
+        fun processClassDeclaration() = declaredClass?.let { cl ->
+                mainBuilder.append("(")
+                val ty = cl.asStarProjectedType()
+                proc(getProcessor(ty, null), ty, null)
+                mainBuilder.append(").")
+                classDeclarationBias = svp - 1
+                return@let mainBuilder
+            }
+
         /**
          * Append processed string to matching KSValueParameter into each builder
          * @param arg expected argument type
@@ -57,11 +69,12 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
             type: KSType,
             vp: KSValueParameter?
         ) {
+            val _postBuilder = StringBuilder()
             val p = arg
                 .process(
                     preBuilder,
                     mainBuilder,
-                    postBuilder,
+                    _postBuilder,
                     svp,
                     sip,
                     vp,
@@ -69,6 +82,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
                 )
             svp = p.first
             sip = p.second
+            postBuilder = _postBuilder.append(postBuilder)
         }
 
         val ktCallString by lazy {
@@ -110,8 +124,8 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         fun scoreCalcLua(fnName: String) = StringBuilder().apply {
             appendLine(
                 """
-if table_size >= ${svp - 1} then
-    local task_score = ${svp - 1}
+if table_size >= ${svp - 1 - classDeclarationBias} then
+    local task_score = ${svp - 1 - classDeclarationBias}
     if task_score >= score then
         score = task_score
         sel_fn = function(...)
@@ -152,15 +166,7 @@ end
             if (returnResolved?.let { parResolved.unitResolved.isAssignableFrom(it) } == false)
                 mainBuilder.append("val rt = ")
 
-            declaredClass?.let { cl ->
-                mainBuilder.append("(")
-                val ty = cl.asStarProjectedType()
-                proc(getProcessor(ty, null), ty, null)
-                mainBuilder.append(").")
-                    .append(funcCall.simpleName.asString())
-            } ?: run {
-                mainBuilder.append(funcCall.qualifiedName!!.asString())
-            }
+            processClassDeclaration()?.append(funcCall.simpleName.asString()) ?: mainBuilder.append(funcCall.qualifiedName!!.asString())
             mainBuilder.append("(")
             if (ptResolved.isNotEmpty()) {
                 ptResolved.forEachIndexed { index, (vp, type) ->
@@ -215,16 +221,7 @@ end
 
         init {
             mainBuilder.append("val rt = ")
-            declaredClass?.let { cl ->
-                mainBuilder.append("(")
-                val ty = cl.asStarProjectedType()
-                val processor = getProcessor(ty, null)
-                proc(processor, ty, null)
-                mainBuilder.append(").")
-                    .append(property.simpleName.asString())
-            } ?: run {
-                mainBuilder.append(property.qualifiedName!!.asString())
-            }
+            processClassDeclaration()?.append(property.simpleName.asString()) ?: mainBuilder.append(property.qualifiedName!!.asString())
         }
     }
 
@@ -253,16 +250,8 @@ end
         }
 
         init {
-            declaredClass?.let { cl ->
-                mainBuilder.append("(")
-                val ty = cl.asStarProjectedType()
-                val processor = getProcessor(ty, null)
-                proc(processor, ty, null)
-                mainBuilder.append(").")
-                    .append(property.simpleName.asString())
-            } ?: run {
-                mainBuilder.append(property.qualifiedName!!.asString())
-            }
+            processClassDeclaration()?.append(property.simpleName.asString()) ?: mainBuilder.append(property.qualifiedName!!.asString())
+
             mainBuilder.append(" = ")
             val processor = getProcessor(typeResolved, null)
             proc(processor, typeResolved, null)
@@ -517,6 +506,8 @@ end
                                 lua.setField(-2, "__newindex")
                                 lua.getGlobal("aris__eq")
                                 lua.setField(-2, "__eq")
+                                lua.push("$cln")
+                                lua.setField(-2, "type")
                                 lua.newTable()"""
                 )
 
