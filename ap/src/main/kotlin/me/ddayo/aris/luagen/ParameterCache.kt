@@ -19,7 +19,7 @@ internal data class ParameterCache(
     val mapResolved: KSType,
     val classResolved: KSType,
     val unitResolved: KSType,
-    val luaValueResolved: KSType,
+    val luaValueResolved: KSType?,
     val coroutineResolved: KSType,
     val luaFuncResolved: KSType,
     val staticDeclResolved: KSType
@@ -40,7 +40,7 @@ internal data class ParameterCache(
             resolver.getClassDeclarationByName<Map<Any, Any>>()!!.asStarProjectedType(),
             resolver.getClassDeclarationByName<Class<*>>()!!.asStarProjectedType(),
             resolver.getClassDeclarationByName<Unit>()!!.asStarProjectedType(),
-            resolver.getClassDeclarationByName("party.iroiro.luajava.value.LuaValue")!!.asStarProjectedType(),
+            resolver.getClassDeclarationByName("party.iroiro.luajava.value.LuaValue")?.asStarProjectedType(),
             resolver.getClassDeclarationByName("me.ddayo.aris.luagen.CoroutineProvider.LuaCoroutineIntegration")!!
                 .asStarProjectedType(),
             resolver.getClassDeclarationByName("me.ddayo.aris.luagen.LuaFunc")!!.asStarProjectedType(),
