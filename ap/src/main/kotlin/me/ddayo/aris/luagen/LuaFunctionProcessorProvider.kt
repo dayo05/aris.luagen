@@ -15,7 +15,7 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
     ) {
         abstract val returnResolved: KSType?
         val returnName by lazy { returnResolved?.declaration?.qualifiedName?.asString() }
-        val isCoroutine by lazy { returnName == "me.ddayo.aris.CoroutineProvider.LuaCoroutineIntegration" }
+        val isCoroutine by lazy { returnName == "me.ddayo.aris.luagen.CoroutineProvider.LuaCoroutineIntegration" }
         open val doc = StringBuilder()
 
         val processor = ArgumentManager.argFilters
@@ -39,6 +39,10 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
 
         fun getLuaFriendlyName(type: KSType) = mutableListOf<String>().also {
                 try {
+                    if(type.declaration is KSTypeParameter) {
+                        it.add("Generic")
+                        return@also
+                    }
                     val processor = getProcessor(type, null)
                     processor.resolveDocSignature(null, type.declaration as KSClassDeclaration, it)
                 } catch(e: Exception) {
@@ -549,182 +553,190 @@ end
     @OptIn(KspExperimental::class)
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor {
         logger = environment.logger
-        return object : SymbolProcessor {
-            val files = mutableSetOf<KSFile>()
+        try {
+            return object : SymbolProcessor {
+                val files = mutableSetOf<KSFile>()
 
-            val functions = mutableMapOf<String, MutableList<AbstractKTProviderInstance<*, *>>>()
+                val functions = mutableMapOf<String, MutableList<AbstractKTProviderInstance<*, *>>>()
 
-            override fun process(resolver: Resolver): List<KSAnnotated> {
-                parResolved = ParameterCache.init(resolver)
-                val defCln = environment.options["default_class_name"] ?: "LuaGenerated"
+                override fun process(resolver: Resolver): List<KSAnnotated> {
+                    parResolved = ParameterCache.init(resolver)
+                    val defCln = environment.options["default_class_name"] ?: "LuaGenerated"
 
-                val byProvider = mutableMapOf<String, MutableList<Pair<LuaProvider, KSClassDeclaration>>>()
-                resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).let { providers ->
-                    providers.mapNotNull { it as? KSClassDeclaration }.forEach { classDeclaration ->
-                        classDeclaration.getAnnotationsByType(LuaProvider::class).forEach {
-                            byProvider.getOrPut(it.className.let {
-                                if (it == "!") defCln
-                                else it
-                            }) { mutableListOf() }.add(it to classDeclaration)
+                    val byProvider = mutableMapOf<String, MutableList<Pair<LuaProvider, KSClassDeclaration>>>()
+                    resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).let { providers ->
+                        providers.mapNotNull { it as? KSClassDeclaration }.forEach { classDeclaration ->
+                            classDeclaration.getAnnotationsByType(LuaProvider::class).forEach {
+                                byProvider.getOrPut(it.className.let {
+                                    if (it == "!") defCln
+                                    else it
+                                }) { mutableListOf() }.add(it to classDeclaration)
+                            }
                         }
                     }
-                }
 
-                byProvider.forEach { (provider, classes) ->
-                    val fns = functions.getOrPut(provider) { mutableListOf() }
-                    val sorter = Sorter()
-                    val inherit = mutableMapOf<String, String>()
+                    byProvider.forEach { (provider, classes) ->
+                        val fns = functions.getOrPut(provider) { mutableListOf() }
+                        val sorter = Sorter()
+                        val inherit = mutableMapOf<String, String>()
 
-                    val nilFn = KTObjectProviderInstance().also { fns.add(it) }
-                    classes.forEach { (providerAnnot, classDeclaration) ->
-                        sorter.addInstance(classDeclaration.qualifiedName!!.asString(), sorter.SorterInstance {
-                            logger.info("Processing: ${classDeclaration.qualifiedName?.asString()}")
-                            val isStatic = when (classDeclaration.classKind) {
-                                ClassKind.CLASS -> false
-                                ClassKind.OBJECT -> true
-                                else -> throw LuaBindingException(
-                                    "Cannot process ${classDeclaration.qualifiedName?.asString()}: Provider not supports object"
-                                )
-                            }
-
-                            val ifn = if (isStatic) nilFn
-                            else KTProviderInstance(classDeclaration).also { fns.add(it) }.also {
-                                val clName = classDeclaration.qualifiedName!!.asString()
-                                if (inherit[clName] != null) {
-                                    it.inherit = inherit[clName]
-                                    it.inheritParent = providerAnnot.inherit
-                                }
-                            }
-
-                            classDeclaration.getDeclaredFunctions().mapNotNull {
-                                it.getAnnotationsByType(
-                                    LuaFunction::class
-                                ).firstOrNull()?.let { annot -> it to annot }
-                            }.forEach { (fn, annot) ->
-                                val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                val library = if (annot.library == "_G") providerAnnot.library else annot.library
-                                ifn.getFunction(library, fnName).targets.add(
-                                    BindTargetFnKt(
-                                        if (isStatic && library != "_G") "$library.$fnName" else fnName,
-                                        fn,
-                                        if (isStatic) null else classDeclaration,
-                                        !annot.exportDoc
+                        val nilFn = KTObjectProviderInstance().also { fns.add(it) }
+                        classes.forEach { (providerAnnot, classDeclaration) ->
+                            sorter.addInstance(classDeclaration.qualifiedName!!.asString(), sorter.SorterInstance {
+                                logger.info("Processing: ${classDeclaration.qualifiedName?.asString()}")
+                                val isStatic = when (classDeclaration.classKind) {
+                                    ClassKind.CLASS -> false
+                                    ClassKind.OBJECT -> true
+                                    else -> throw LuaBindingException(
+                                        "Cannot process ${classDeclaration.qualifiedName?.asString()}: Provider not supports object"
                                     )
-                                )
-                                files.add(classDeclaration.containingFile!!)
-                            }
+                                }
 
-                            classDeclaration.getDeclaredProperties().mapNotNull {
-                                it.getAnnotationsByType(
-                                    LuaProperty::class
-                                ).firstOrNull()?.let { annot -> it to annot }
-                            }.forEach { (fn, annot) ->
-                                val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
-                                val library = if (annot.library == "_G") providerAnnot.library else annot.library
-                                if (annot.exportPropertySetter && fn.isMutable)
-                                    ifn.getFunction(library, "set_$fnName").targets.add(
-                                        BindTargetPropertySetterKt(
-                                            "set_$fnName",
+                                val ifn = if (isStatic) nilFn
+                                else KTProviderInstance(classDeclaration).also { fns.add(it) }.also {
+                                    val clName = classDeclaration.qualifiedName!!.asString()
+                                    if (inherit[clName] != null) {
+                                        it.inherit = inherit[clName]
+                                        it.inheritParent = providerAnnot.inherit
+                                    }
+                                }
+
+                                classDeclaration.getDeclaredFunctions().mapNotNull {
+                                    it.getAnnotationsByType(
+                                        LuaFunction::class
+                                    ).firstOrNull()?.let { annot -> it to annot }
+                                }.forEach { (fn, annot) ->
+                                    val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
+                                    val library = if (annot.library == "_G") providerAnnot.library else annot.library
+                                    ifn.getFunction(library, fnName).targets.add(
+                                        BindTargetFnKt(
+                                            if (isStatic && library != "_G") "$library.$fnName" else fnName,
                                             fn,
                                             if (isStatic) null else classDeclaration,
                                             !annot.exportDoc
                                         )
                                     )
-                                ifn.getFunction(library, "get_$fnName").targets.add(
-                                    BindTargetPropertyGetterKt(
-                                        "get_$fnName",
-                                        fn,
-                                        if (isStatic) null else classDeclaration,
-                                        !annot.exportDoc
-                                    )
-                                )
-                                files.add(classDeclaration.containingFile!!)
-                            }
-                        })
-                    }
-
-                    classes.forEach { (currentProvider, current) ->
-                        current.superTypes.map { it.resolve().declaration }.filterIsInstance<KSClassDeclaration>()
-                            .forEach { parent ->
-                                if (parent.getAnnotationsByType(LuaProvider::class).any { it.className == currentProvider.className}) {
-                                    inherit[current.qualifiedName!!.asString()] = parent.qualifiedName!!.asString()
-                                    environment.logger.info("Inherit: ${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
-
-                                    if (sorter[parent.qualifiedName!!.asString()] != null) sorter.setParent(
-                                        parent.qualifiedName!!.asString(), current.qualifiedName!!.asString()
-                                    )
+                                    files.add(classDeclaration.containingFile!!)
                                 }
-                            }
+
+                                classDeclaration.getDeclaredProperties().mapNotNull {
+                                    it.getAnnotationsByType(
+                                        LuaProperty::class
+                                    ).firstOrNull()?.let { annot -> it to annot }
+                                }.forEach { (fn, annot) ->
+                                    val fnName = if (annot.name == "!") fn.simpleName.asString() else annot.name
+                                    val library = if (annot.library == "_G") providerAnnot.library else annot.library
+                                    if (annot.exportPropertySetter && fn.isMutable)
+                                        ifn.getFunction(library, "set_$fnName").targets.add(
+                                            BindTargetPropertySetterKt(
+                                                "set_$fnName",
+                                                fn,
+                                                if (isStatic) null else classDeclaration,
+                                                !annot.exportDoc
+                                            )
+                                        )
+                                    ifn.getFunction(library, "get_$fnName").targets.add(
+                                        BindTargetPropertyGetterKt(
+                                            "get_$fnName",
+                                            fn,
+                                            if (isStatic) null else classDeclaration,
+                                            !annot.exportDoc
+                                        )
+                                    )
+                                    files.add(classDeclaration.containingFile!!)
+                                }
+                            })
+                        }
+
+                        classes.forEach { (_, current) ->
+                            current.superTypes.map { it.resolve().declaration }.filterIsInstance<KSClassDeclaration>()
+                                .forEach { parent ->
+                                    if (parent.isAnnotationPresent(LuaProvider::class)) {
+                                        inherit[current.qualifiedName!!.asString()] = parent.qualifiedName!!.asString()
+                                        environment.logger.info("Inherit: ${current.qualifiedName?.asString()} -> ${parent.qualifiedName?.asString()}")
+
+                                        if (sorter[parent.qualifiedName!!.asString()] != null) sorter.setParent(
+                                            parent.qualifiedName!!.asString(), current.qualifiedName!!.asString()
+                                        )
+                                    }
+                                }
+                        }
+
+                        sorter.process()
                     }
 
-                    sorter.process()
+                    return resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).filter { !it.validate() }
+                        .toList()
+                        .also {
+                            if (it.isNotEmpty()) logger.warn("Some class not processed: ${it.joinToString { it.location.toString() }}")
+                        }
                 }
 
-                return resolver.getSymbolsWithAnnotation(luaProviderAnnotationName).filter { !it.validate() }.toList()
-                    .also {
-                        if (it.isNotEmpty()) logger.warn("Some class not processed: ${it.joinToString { it.location.toString() }}")
-                    }
-            }
+                override fun finish() {
+                    super.finish()
 
-            override fun finish() {
-                super.finish()
+                    val pkg = environment.options["package_name"] ?: "me.ddayo.aris.gen"
 
-                val pkg = environment.options["package_name"] ?: "me.ddayo.aris.gen"
+                    functions.entries.forEach { (clName, cls) ->
+                        logger.info("Generating: $clName")
+                        val luaCode = cls.joinToString("\n") { fn -> fn.luaBind }
 
-                functions.entries.forEach { (clName, cls) ->
-                    logger.info("Generating: $clName")
-                    val luaCode = cls.joinToString("\n") { fn -> fn.luaBind }
-
-                    val ktCode = StringBuilder().apply {
-                        appendLine(
-                            """package $pkg
+                        val ktCode = StringBuilder().apply {
+                            appendLine(
+                                """package $pkg
 
 import party.iroiro.luajava.Lua
 import party.iroiro.luajava.LuaException
 import me.ddayo.aris.luagen.*
 
 object $clName {"""
-                        )
-                        appendLine(
-                            """
+                            )
+                            appendLine(
+                                """
     fun initEngine(engine: LuaEngine) {
         val lua = engine.lua
         val LuaMain = engine.luaMain 
 """
-                        )
-                        // Add all kotlin binding code(overloading resolved)
-                        appendLine(cls.joinToString("\n") { fn -> fn.ktBind })
-                        // Add all lua code(overloading resolved here)
-                        appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
-                        appendLine("lua.pCall(0, 0)")
-                        // Add all metatable(for clean lua code and resolve inheritance)
-                        appendLine(cls.joinToString("") { fn -> fn.metatableGenerated })
-                        appendLine("}")
-                        // Add generated kotlin extension method
-                        appendLine(cls.joinToString("\n") { v -> v.objectGenerated.toString() })
-                        appendLine("}")
-                    }.toString()
+                            )
+                            // Add all kotlin binding code(overloading resolved)
+                            appendLine(cls.joinToString("\n") { fn -> fn.ktBind })
+                            // Add all lua code(overloading resolved here)
+                            appendLine("        lua.load(\"\"\"$luaCode\"\"\")")
+                            appendLine("lua.pCall(0, 0)")
+                            // Add all metatable(for clean lua code and resolve inheritance)
+                            appendLine(cls.joinToString("") { fn -> fn.metatableGenerated })
+                            appendLine("}")
+                            // Add generated kotlin extension method
+                            appendLine(cls.joinToString("\n") { v -> v.objectGenerated.toString() })
+                            appendLine("}")
+                        }.toString()
 
-                    environment.codeGenerator.createNewFile(
-                        dependencies = Dependencies(true, *(files).toTypedArray()), packageName = pkg, fileName = clName
-                    ).writer().apply {
-                        write(ktCode)
-                        close()
-                    }
-                    if (environment.options["export_lua"] == "true") environment.codeGenerator.createNewFileByPath(
-                        Dependencies(false), clName, "lua"
-                    ).writer().apply {
-                        write(luaCode)
-                        close()
-                    }
-                    if (environment.options["export_doc"] == "true") environment.codeGenerator.createNewFileByPath(
-                        Dependencies(false), "${clName}_doc", "md"
-                    ).writer().apply {
-                        write(cls.joinToString("\n\n") { it.docString })
-                        close()
+                        environment.codeGenerator.createNewFile(
+                            dependencies = Dependencies(true, *(files).toTypedArray()),
+                            packageName = pkg,
+                            fileName = clName
+                        ).writer().apply {
+                            write(ktCode)
+                            close()
+                        }
+                        if (environment.options["export_lua"] == "true") environment.codeGenerator.createNewFileByPath(
+                            Dependencies(false), clName, "lua"
+                        ).writer().apply {
+                            write(luaCode)
+                            close()
+                        }
+                        if (environment.options["export_doc"] == "true") environment.codeGenerator.createNewFileByPath(
+                            Dependencies(false), "${clName}_doc", "md"
+                        ).writer().apply {
+                            write(cls.joinToString("\n\n") { it.docString })
+                            close()
+                        }
                     }
                 }
             }
+        } catch(e: Exception) {
+            logger.error(e.stackTraceToString())
+            throw e
         }
     }
 }
