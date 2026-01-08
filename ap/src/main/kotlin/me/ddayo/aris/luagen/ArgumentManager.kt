@@ -360,6 +360,37 @@ internal object ArgumentManager {
         }
     }
 
+    class LuaValueArgument: Argument() {
+        override fun resolve(
+            index: Int,
+            builder: StringBuilder,
+            declaredClass: KSClassDeclaration,
+            param: KSValueParameter?
+        ): Int {
+            builder.append("lua.pushValue(${index}).run{lua.get()}")
+            return index + 1
+        }
+
+        override fun isValid(type: KSType, param: KSValueParameter?) =
+            parResolved.luaValueResolved!!.isAssignableFrom(type)
+
+        override fun resolveDocSignatureWithName(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("${param?.name?.asString()}: any")
+        }
+
+        override fun resolveDocSignature(
+            param: KSValueParameter?,
+            declaredClass: KSClassDeclaration,
+            docSignatureBuilder: MutableList<String>
+        ) {
+            docSignatureBuilder.add("any")
+        }
+    }
+
     open class JavaObjectArgument : Argument() {
         private var initStackPos = -1
         override fun init(builder: StringBuilder, currentStackPos: Int): Int {
@@ -541,6 +572,7 @@ internal object ArgumentManager {
     val argFilters
         get() = listOf(
             VarargArgument(),
+            LuaValueArgument(),
             CoroutineHandlerArgument(),
             StringArgument(),
             LongArgument(),
