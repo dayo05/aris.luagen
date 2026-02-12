@@ -1,6 +1,6 @@
 plugins {
-    kotlin("jvm") version "2.0.0"
-    id("com.google.devtools.ksp") version "2.0.0-1.0.21"
+    kotlin("jvm") version "2.3.0"
+    id("com.google.devtools.ksp") version "2.3.5"
 }
 
 group = "me.ddayo"
