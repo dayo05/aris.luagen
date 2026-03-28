@@ -98,6 +98,26 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
 
     fun dispose() {
         isDisposed = true
+
+        // Clean up still-running/yielded tasks
+        tasks.forEach { task ->
+            if (task.taskStatus != TaskStatus.LOAD_ERROR
+                && task.taskStatus != TaskStatus.UNINITIALIZED) task.coroutine.close()
+        }
+        tasks.clear()
+
+        lua.gc()
+
+        // Drain phantom reference queue
+        System.gc()
+        while (true) {
+            val ref = ((arisRefQueue.poll() ?: break) as ArisPhantomReference)
+            refs.remove(ref)
+            if (ref.ref == -1) continue
+            lua.unref(ref.ref)
+        }
+        refs.clear()
+
         lua.close()
     }
 
@@ -132,6 +152,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
                 errorMessageHandler("Cannot init with refIdx -1")
             else {
                 coroutine = lua.newThread()
+                lua.pop(1) // pop thread from main stack; registry entry keeps it alive
                 coroutine.refGet(refIdx)
                 if(!coroutine.isFunction(-1))
                     errorMessageHandler("Given data is not a function")

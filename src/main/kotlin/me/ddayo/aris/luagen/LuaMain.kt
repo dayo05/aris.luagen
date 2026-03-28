@@ -114,7 +114,6 @@ class LuaMain(val engine: LuaEngine) {
 
     var _luaGlobalMt = -1
         private set
-    private var _luaGcInternal = -1
 
     init {
         val lua = engine.lua
@@ -126,12 +125,12 @@ class LuaMain(val engine: LuaEngine) {
             _luaGlobalMt = lua.ref()
 
             if (lua.getMetaField(-1, "__gc") == 0) throw NoSuchElementException("Cannot retrieve __gc metafield")
-            _luaGcInternal = lua.ref()
+            val luaGcInternal = lua.ref()
             lua.push { lua ->
                 // lua.pushTable(...)
                 lua.refGet(_luaGlobalMt)
                 lua.setMetatable(-2)
-                lua.refGet(_luaGcInternal)
+                lua.refGet(luaGcInternal)
                 lua.pushValue(1)
                 lua.pCall(1, 0)
                 lua.pop(1)
