@@ -3,9 +3,10 @@ package me.ddayo.aris.luagen
 import party.iroiro.luajava.Lua
 
 
-class LuaFunc(val engine: LuaEngine, private val lua: Lua, loc: Int = -1) : CoroutineProvider {
+class LuaFunc(val engine: LuaEngine, lua: Lua, loc: Int = -1) : CoroutineProvider {
     private val task = engine.currentTask!!
     private val ref: Int
+    private val mainLua = engine.lua
 
     init {
         if (!lua.isFunction(loc))
@@ -16,14 +17,14 @@ class LuaFunc(val engine: LuaEngine, private val lua: Lua, loc: Int = -1) : Coro
     }
 
     fun callRawArg(arg: LuaFunc.() -> Int) {
-        lua.refGet(ref)
-        lua.pCall(arg(), -1)
+        mainLua.refGet(ref)
+        mainLua.pCall(arg(), -1)
     }
 
     fun call(vararg values: Any?) {
         callRawArg {
             var a = 0
-            for (x in values) a += engine.luaMain.pushNoInline(lua, x)
+            for (x in values) a += engine.luaMain.pushNoInline(mainLua, x)
             a
         }
     }
@@ -31,8 +32,8 @@ class LuaFunc(val engine: LuaEngine, private val lua: Lua, loc: Int = -1) : Coro
     fun callAsTaskRawArg(arg: LuaFunc.(task: LuaEngine.LuaTask) -> Int): LuaEngine.LuaTask {
         // TODO: maybe there are better implementation...
         val task = engine.LuaTask(task.name + "_function")
-        lua.refGet(ref)
-        task.refIdx = lua.ref()
+        mainLua.refGet(ref)
+        task.refIdx = mainLua.ref()
 
         task.init()
         task.initArgc = arg(task)
