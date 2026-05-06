@@ -90,7 +90,7 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
             val ref = ((arisRefQueue.poll() ?: break) as ArisPhantomReference)
             refs.remove(ref)
             refStatus[ref.ref] = refStatus[ref.ref]!! - 1
-            if(refStatus[ref.ref]!! == 0) continue
+            if(refStatus[ref.ref]!! != 0) continue
             if(ref.ref == -1) continue
             lua.unref(ref.ref)
         }
@@ -190,6 +190,8 @@ open class LuaEngine(val lua: Lua, private val errorMessageHandler: (s: String) 
             } catch (e: LuaException) {
                 errorMessageHandler((e.message ?: "No message provided") + "\n" + e.stackTraceToString())
                 taskStatus = TaskStatus.RUNTIME_ERROR
+                try { coroutine.close() } catch (_: Throwable) {}
+                engine.tasks.remove(this)
             }
         }
 
