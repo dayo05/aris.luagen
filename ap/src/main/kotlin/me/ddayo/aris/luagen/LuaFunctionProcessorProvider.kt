@@ -199,6 +199,17 @@ end
                 appendLine("```")
             }
         }
+
+        // KSP2 closes the analysis-API scope after `process()` returns. Force
+        // the parent's KSP-touching lazies (returnName, isCoroutine,
+        // ktCallString) to materialize now, while we're still inside the
+        // scope; without this `finish()` blows up reading
+        // `returnResolved.declaration` etc.
+        init {
+            @Suppress("UNUSED_EXPRESSION") run {
+                returnName; isCoroutine; ktCallString
+            }
+        }
     }
 
     private class BindTargetPropertyGetterKt(
@@ -226,6 +237,13 @@ end
         init {
             mainBuilder.append("val rt = ")
             processClassDeclaration()?.append(property.simpleName.asString()) ?: mainBuilder.append(property.qualifiedName!!.asString())
+        }
+
+        // See BindTargetFnKt — same KSP2 lifetime workaround.
+        init {
+            @Suppress("UNUSED_EXPRESSION") run {
+                returnName; isCoroutine; ktCallString
+            }
         }
     }
 
@@ -259,6 +277,13 @@ end
             mainBuilder.append(" = ")
             val processor = getProcessor(typeResolved, null)
             proc(processor, typeResolved, null)
+        }
+
+        // See BindTargetFnKt — same KSP2 lifetime workaround.
+        init {
+            @Suppress("UNUSED_EXPRESSION") run {
+                returnName; isCoroutine; ktCallString
+            }
         }
     }
 
