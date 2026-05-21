@@ -3,21 +3,33 @@ package me.ddayo.aris.luagen
 import party.iroiro.luajava.Lua
 
 
-class LuaFunc(val engine: LuaEngine, private val lua: Lua, loc: Int = -1) : CoroutineProvider {
+class LuaFunc(val engine: LuaEngine, creationLua: Lua, loc: Int = -1) : CoroutineProvider {
     private val task = engine.currentTask!!
     private val ref: Int
 
+    // All later calls go through the engine's main Lua state. `creationLua` is
+    // the coroutine of the task that registered this function, and that
+    // coroutine is closed once the task finishes. A LuaFunc stored past that
+    // point (e.g. an entity-goal callback fired long after the registering
+    // script ended) would otherwise call into a dead thread and crash with
+    // "no more stack space available". The registry ref is shared across the
+    // whole Lua state, so retrieving it from the main state is valid.
+    private val lua = engine.lua
+
     init {
-        if (!lua.isFunction(loc))
-            throw Exception("Lua function expected but got ${lua.type(loc)}")
-        lua.pushValue(loc)
-        ref = lua.ref()
+        if (!creationLua.isFunction(loc))
+            throw Exception("Lua function expected but got ${creationLua.type(loc)}")
+        creationLua.pushValue(loc)
+        ref = creationLua.ref()
         task.ref(this, ref)
     }
 
     fun callRawArg(arg: LuaFunc.() -> Int) {
         lua.refGet(ref)
-        lua.pCall(arg(), -1)
+        // nResults must be 0, not LUA_MULTRET (-1): call() discards the result,
+        // so any return values left on the stack would accumulate every call
+        // until the Lua stack is exhausted ("no more stack space available").
+        lua.pCall(arg(), 0)
     }
 
     fun call(vararg values: Any?) {
