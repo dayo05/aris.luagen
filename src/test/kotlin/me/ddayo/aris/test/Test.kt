@@ -42,6 +42,13 @@ open class Test1 : ILuaStaticDecl by Test1_LuaGenerated {
         func.call(1, 2, 3)
     }
 
+    var keptHook: LuaFunc? = null
+
+    @LuaFunction
+    fun keep(func: LuaFunc) {
+        keptHook = func
+    }
+
     var a = 0
 
     @LuaFunction

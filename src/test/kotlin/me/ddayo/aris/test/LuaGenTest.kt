@@ -536,6 +536,31 @@ class LuaGenTest {
         assertTaskFinished(task)
     }
 
+    // Regression: LuaFunc.callRawArg used to call pCall(N, LUA_MULTRET) and to
+    // dispatch on the coroutine of the task that registered the function. From
+    // tick-style call sites (e.g. entity goal hooks) this leaked every return
+    // value onto the Lua stack and, once the registering task ended, also
+    // dispatched onto a closed coroutine. Both surfaced as "No more stack space
+    // available". The fix routes calls through engine.lua and uses
+    // pCall(N, 0) so nothing leaks.
+    @Test
+    fun callKeptHookManyTimesAfterTaskFinished() {
+        runLua("""
+            keeper = create_test1()
+            keeper:keep(function(a, b, c)
+                -- Return more values than args+1 so each pre-fix call would
+                -- have leaked slots onto the main Lua stack.
+                return a, b, c, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+            end)
+        """)
+        val keeper = getLuaObject("keeper") as Test1
+        val fn = checkNotNull(keeper.keptHook) { "keep() did not store the hook" }
+
+        // Pre-fix: would throw "No more stack space available" after the
+        // Lua stack accumulated ~thousands of leaked return values.
+        repeat(5000) { fn.call(1, 2, 3) }
+    }
+
     // ===== Task name test =====
 
     @Test
