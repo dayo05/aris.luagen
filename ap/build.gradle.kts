@@ -1,9 +1,23 @@
 plugins {
     kotlin("jvm")
+    `maven-publish`
+    `java-library`
 }
 
 group = "me.ddayo"
 version = "1.0-SNAPSHOT"
+
+java {
+    withSourcesJar()
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+        }
+    }
+}
 
 dependencies {
     implementation("com.google.devtools.ksp:symbol-processing-api:2.3.5")

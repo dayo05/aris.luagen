@@ -1,10 +1,24 @@
 plugins {
     kotlin("jvm") version "2.3.0"
     id("com.google.devtools.ksp") version "2.3.5"
+    `maven-publish`
+    `java-library`
 }
 
 group = "me.ddayo"
 version = "1.0-SNAPSHOT"
+
+java {
+    withSourcesJar()
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+        }
+    }
+}
 
 dependencies {
     api(project(":ap"))
