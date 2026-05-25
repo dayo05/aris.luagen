@@ -1,0 +1,28 @@
+# Build recipe consumed by https://github.com/dayo05/kei after each push.
+# Plain Kotlin/JVM library: build the jars, then publish to the kei Maven
+# repo so other projects (aris-mc, aris-db, aris-geckolib) can pull
+# me.ddayo:aris.luagen and me.ddayo:ap as SNAPSHOT deps.
+
+[[steps]]
+name = "build"
+command = "./gradlew"
+args = ["build"]
+
+[[steps]]
+name = "publish-maven"
+command = "bash"
+args = [
+  "-c",
+  "./gradlew publishToMavenLocal -Dmaven.repo.local=\"${KEI_MAVEN_REPO:-$HOME/.m2/repository}\"",
+]
+
+# Pick up the library jars + the annotation-processor subproject's jars.
+# `suffix = ""` flattens to the build's artifact root keeping the source
+# filenames (e.g. aris.luagen-1.0-SNAPSHOT.jar, ap-1.0-SNAPSHOT.jar).
+[[artifacts]]
+pattern = "build/libs/*.jar"
+suffix = ""
+
+[[artifacts]]
+pattern = "ap/build/libs/*.jar"
+suffix = ""
