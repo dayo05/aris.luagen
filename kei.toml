@@ -26,3 +26,7 @@ suffix = ""
 [[artifacts]]
 pattern = "ap/build/libs/*.jar"
 suffix = ""
+
+[[artifacts]]
+pattern = "docs/README.md"
+suffix = ""
