@@ -5,6 +5,11 @@ package me.ddayo.aris.luagen
 import com.google.devtools.ksp.*
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.exists
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 
 class LuaFunctionProcessorProvider : SymbolProcessorProvider {
@@ -17,6 +22,9 @@ class LuaFunctionProcessorProvider : SymbolProcessorProvider {
         val returnName by lazy { returnResolved?.declaration?.qualifiedName?.asString() }
         val isCoroutine by lazy { returnName == "me.ddayo.aris.luagen.CoroutineProvider.LuaCoroutineIntegration" }
         open val doc = StringBuilder()
+        abstract val apiParams: List<ApiSchemaParam>
+        abstract val apiReturnType: String
+        abstract val apiDescription: String?
 
         val processor = ArgumentManager.argFilters
 
@@ -162,6 +170,11 @@ end
         isPrivate: Boolean
     ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
         override val returnResolved = funcCall.returnType?.resolve()?.starProjection()
+        override val apiParams = funcCall.parameters.mapIndexedNotNull { index, param ->
+            param.toApiSchemaParam(index)
+        }
+        override val apiReturnType = returnResolved.schemaTypeName()
+        override val apiDescription = funcCall.docString?.trim()?.takeIf { it.isNotBlank() }
 
         val ptResolved: MutableList<Pair<KSValueParameter?, KSType>> =
             funcCall.parameters.map { it to it.type.resolve() }.toMutableList()
@@ -219,6 +232,9 @@ end
         isPrivate: Boolean
     ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
         override val returnResolved = property.type.resolve().starProjection()
+        override val apiParams = emptyList<ApiSchemaParam>()
+        override val apiReturnType = returnResolved.schemaTypeName()
+        override val apiDescription = property.docString?.trim()?.takeIf { it.isNotBlank() }
         override val doc = StringBuilder().apply {
             if (declaredClass == null)
                 appendLine("## $luaTargetName() -> ${getLuaFriendlyName(returnResolved)}")
@@ -255,6 +271,9 @@ end
     ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
         override val returnResolved = parResolved.unitResolved
         val typeResolved = property.type.resolve()
+        override val apiParams = listOf(ApiSchemaParam("new_value", typeResolved.schemaTypeName()))
+        override val apiReturnType = "nil"
+        override val apiDescription = property.docString?.trim()?.takeIf { it.isNotBlank() }
 
         override val doc = StringBuilder().apply {
             if (declaredClass == null)
@@ -467,6 +486,40 @@ end
         var inheritParent: String? = null
     }
 
+    private data class ApiSchemaType(
+        val name: String,
+        val displayName: String,
+        val description: String? = null,
+        val extends: Set<String> = emptySet()
+    )
+
+    private data class ApiSchemaParam(val name: String, val type: String)
+
+    private data class ApiSchemaFunction(
+        val namespace: String,
+        val name: String,
+        val luaName: String,
+        val i18nKey: String,
+        val params: List<ApiSchemaParam>,
+        val returns: String,
+        val description: String?
+    )
+
+    private data class ApiSchemaMethod(
+        val ownerType: String,
+        val name: String,
+        val i18nKey: String,
+        val params: List<ApiSchemaParam>,
+        val returns: String,
+        val description: String?
+    )
+
+    private data class ApiI18nEntry(
+        val displayName: String,
+        val description: String? = null,
+        val rawJson: String? = null
+    )
+
     private class KTObjectProviderInstance :
         AbstractKTProviderInstance<BindStaticLibraryTargetLua, BindStaticTargetLua>() {
         override fun getFunction(library: String, name: String): BindStaticTargetLua {
@@ -573,6 +626,37 @@ end
         private val luaProviderAnnotationName = LuaProvider::class.java.canonicalName
         internal lateinit var parResolved: ParameterCache private set
         internal lateinit var logger: KSPLogger private set
+
+        private val primitiveSchemaTypes = setOf("nil", "string", "number", "boolean", "function", "any")
+
+        private fun KSType?.schemaTypeName(): String {
+            val type = this ?: return "nil"
+            val decl = type.declaration
+            if (decl is KSTypeParameter) return "any"
+            val qualified = decl.qualifiedName?.asString() ?: decl.simpleName.asString()
+            return when (qualified) {
+                "kotlin.Unit" -> "nil"
+                "kotlin.String", "java.lang.String" -> "string"
+                "kotlin.Boolean", "java.lang.Boolean" -> "boolean"
+                "kotlin.Byte", "kotlin.Short", "kotlin.Int", "kotlin.Long",
+                "kotlin.Float", "kotlin.Double",
+                "java.lang.Byte", "java.lang.Short", "java.lang.Integer", "java.lang.Long",
+                "java.lang.Float", "java.lang.Double" -> "number"
+                "kotlin.Function", "kotlin.Function0", "kotlin.Function1", "kotlin.Function2" -> "function"
+                "kotlin.Any", "java.lang.Object" -> "any"
+                else -> qualified
+            }
+        }
+
+        private fun KSValueParameter.toApiSchemaParam(index: Int): ApiSchemaParam? {
+            val resolved = type.resolve()
+            val docTypes = mutableListOf<String>()
+            val processor = ArgumentManager.argFilters.first { it.isValid(resolved, this) }
+            processor.resolveDocSignature(this, resolved.declaration as KSClassDeclaration, docTypes)
+            val docType = docTypes.singleOrNull()?.takeIf { it.isNotBlank() } ?: docTypes.joinToString(", ").takeIf { it.isNotBlank() } ?: return null
+            val schemaType = if (docType in primitiveSchemaTypes) docType else resolved.schemaTypeName()
+            return ApiSchemaParam(name?.asString() ?: "arg${index + 1}", schemaType)
+        }
     }
 
     @OptIn(KspExperimental::class)
@@ -701,9 +785,25 @@ end
                     super.finish()
 
                     val pkg = environment.options["package_name"] ?: "me.ddayo.aris.gen"
+                    val exportApiSchema = environment.options["export_api_schema"] == "true"
+                    val apiContextsRequired = environment.options["api_contexts_required"] == "true"
+                    val apiDisplayLangs = environment.options["api_display_lang"]
+                        ?.split(",", "|")
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        ?: emptyList()
+                    val hasApiContextOptions = environment.options.keys.any { it.startsWith("api_contexts.") }
+                    val i18nProviders = mutableListOf<AbstractKTProviderInstance<*, *>>()
 
                     functions.entries.forEach { (clName, cls) ->
                         logger.info("Generating: $clName")
+                        val apiContexts = parseApiContexts(clName, environment.options)
+                        if (exportApiSchema && apiContextsRequired && apiContexts.isEmpty()) {
+                            throw LuaBindingException("Missing KSP option api_contexts.$clName while api_contexts_required=true")
+                        }
+                        if (!hasApiContextOptions || apiContexts.isNotEmpty()) {
+                            i18nProviders += cls
+                        }
                         val luaCode = cls.joinToString("\n") { fn -> fn.luaBind }
 
                         val ktCode = StringBuilder().apply {
@@ -756,6 +856,16 @@ object $clName {"""
                             write(cls.joinToString("\n\n") { it.docString })
                             close()
                         }
+                        if (exportApiSchema) environment.codeGenerator.createNewFileByPath(
+                            Dependencies(false), "apis/$clName", "json"
+                        ).writer().apply {
+                            write(buildApiSchemaJson(clName, cls, apiContexts))
+                            close()
+                        }
+                    }
+
+                    if (apiDisplayLangs.isNotEmpty()) {
+                        writeDefaultI18nFiles(apiDisplayLangs, i18nProviders)
                     }
                 }
             }
@@ -764,4 +874,382 @@ object $clName {"""
             throw e
         }
     }
+
+    private fun buildApiSchemaJson(
+        generatedClassName: String,
+        providers: List<AbstractKTProviderInstance<*, *>>,
+        contexts: List<String>
+    ): String {
+        val types = linkedMapOf<String, ApiSchemaType>()
+        val functions = mutableListOf<ApiSchemaFunction>()
+        val methods = mutableListOf<ApiSchemaMethod>()
+
+        fun registerType(typeName: String) {
+            if (typeName in primitiveSchemaTypes) return
+            types.putIfAbsent(typeName, ApiSchemaType(typeName, typeName.substringAfterLast('.')))
+        }
+
+        fun registerReturnAndParams(returnType: String, params: List<ApiSchemaParam>) {
+            registerType(returnType)
+            params.forEach { registerType(it.type) }
+        }
+
+        providers.forEach { provider ->
+            when (provider) {
+                is KTObjectProviderInstance -> {
+                    provider.schemaFunctions().forEach { function ->
+                        registerReturnAndParams(function.returns, function.params)
+                        functions.add(function)
+                    }
+                }
+                is KTProviderInstance -> {
+                    registerType(provider.className)
+                    provider.inherit?.let { parentType ->
+                        registerType(parentType)
+                        types[provider.className] = ApiSchemaType(
+                            name = provider.className,
+                            displayName = provider.simpleName,
+                            description = provider.declaredClass.docString?.trim()?.takeIf { it.isNotBlank() },
+                            extends = setOf(parentType)
+                        )
+                    } ?: run {
+                        types[provider.className] = ApiSchemaType(
+                            provider.className,
+                            provider.simpleName,
+                            provider.declaredClass.docString?.trim()?.takeIf { it.isNotBlank() }
+                        )
+                    }
+                    provider.schemaMethods().forEach { method ->
+                        registerReturnAndParams(method.returns, method.params)
+                        methods.add(method)
+                    }
+                }
+            }
+        }
+
+        return buildString {
+            appendLine("{")
+            appendLine("  \"version\": 1,")
+            appendLine("  \"name\": ${jsonString(generatedClassName)},")
+            appendLine("  \"generatedClassName\": ${jsonString(generatedClassName)},")
+            appendLine("  \"contexts\": ${jsonStringArray(contexts)},")
+            appendLine("  \"types\": [")
+            append(types.values.sortedBy { it.name }.joinToString(",\n") { type ->
+                buildString {
+                    appendLine("    {")
+                    appendLine("      \"name\": ${jsonString(type.name)},")
+                    appendLine("      \"displayName\": ${jsonString(type.displayName)},")
+                    appendLine("      \"description\": ${jsonNullableString(type.description)},")
+                    append("      \"extends\": ${jsonStringArray(type.extends.sorted())}")
+                    append("\n    }")
+                }
+            })
+            appendLine()
+            appendLine("  ],")
+            appendLine("  \"functions\": [")
+            append(functions.joinToString(",\n") { it.toJson() })
+            appendLine()
+            appendLine("  ],")
+            appendLine("  \"methods\": [")
+            append(methods.joinToString(",\n") { it.toJson() })
+            appendLine()
+            appendLine("  ]")
+            appendLine("}")
+        }
+    }
+
+    private fun parseApiContexts(providerName: String, options: Map<String, String>): List<String> =
+        options["api_contexts.$providerName"]
+            ?.split(",", "|")
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+
+    private fun KTObjectProviderInstance.schemaFunctions(): List<ApiSchemaFunction> =
+        inner.flatMap { (_, library) -> library.schemaFunctions() }
+
+    private fun BindStaticLibraryTargetLua.schemaFunctions(): List<ApiSchemaFunction> {
+        val direct = targets.flatMap { (name, target) ->
+            target.targets.mapNotNull { binding ->
+                binding.toApiFunction(library, name)
+            }
+        }
+        return direct + children.flatMap { (_, child) -> child.schemaFunctions() }
+    }
+
+    private fun KTProviderInstance.schemaMethods(): List<ApiSchemaMethod> =
+        inner.flatMap { (name, target) ->
+            target.targets.mapNotNull { binding ->
+                binding.toApiMethod(className, name)
+            }
+        }
+
+    private fun AbstractBindTarget.toApiFunction(library: String, name: String): ApiSchemaFunction? {
+        if (isPrivate) return null
+        val namespace = if (library == "_G") "" else library
+        val luaName = if (namespace.isBlank()) name else "$namespace.$name"
+        return ApiSchemaFunction(
+            namespace = namespace,
+            name = name,
+            luaName = luaName,
+            i18nKey = "$luaName(${apiParams.joinToString(",") { it.type }})",
+            params = apiParams,
+            returns = apiReturnType,
+            description = apiDescription
+        )
+    }
+
+    private fun AbstractBindTarget.toApiMethod(ownerType: String, name: String): ApiSchemaMethod? {
+        if (isPrivate) return null
+        return ApiSchemaMethod(
+            ownerType = ownerType,
+            name = name,
+            i18nKey = "$ownerType:$name(${apiParams.joinToString(",") { it.type }})",
+            params = apiParams,
+            returns = apiReturnType,
+            description = apiDescription
+        )
+    }
+
+    private fun buildI18nEntries(providers: List<AbstractKTProviderInstance<*, *>>): Map<String, ApiI18nEntry> {
+        val entries = linkedMapOf<String, ApiI18nEntry>()
+
+        providers.forEach { provider ->
+            when (provider) {
+                is KTObjectProviderInstance -> {
+                    provider.schemaFunctions().forEach { function ->
+                        registerI18nTypes(function.returns, function.params, entries)
+                        entries.putIfAbsent(
+                            function.i18nKey,
+                            ApiI18nEntry(defaultDisplayName(function.name), function.description)
+                        )
+                    }
+                }
+                is KTProviderInstance -> {
+                    entries.putIfAbsent(
+                        provider.className,
+                        ApiI18nEntry(
+                            provider.simpleName,
+                            provider.declaredClass.docString?.trim()?.takeIf { it.isNotBlank() }
+                        )
+                    )
+                    provider.inherit?.let { parentType ->
+                        entries.putIfAbsent(parentType, ApiI18nEntry(parentType.substringAfterLast('.')))
+                    }
+                    provider.schemaMethods().forEach { method ->
+                        registerI18nTypes(method.returns, method.params, entries)
+                        entries.putIfAbsent(
+                            method.i18nKey,
+                            ApiI18nEntry(defaultDisplayName(method.name), method.description)
+                        )
+                    }
+                }
+            }
+        }
+
+        return entries.toSortedMap()
+    }
+
+    private fun registerI18nTypes(
+        returnType: String,
+        params: List<ApiSchemaParam>,
+        entries: MutableMap<String, ApiI18nEntry>
+    ) {
+        fun register(type: String) {
+            if (type !in primitiveSchemaTypes) entries.putIfAbsent(type, ApiI18nEntry(type.substringAfterLast('.')))
+        }
+        register(returnType)
+        params.forEach { register(it.type) }
+    }
+
+    private fun writeDefaultI18nFiles(langs: List<String>, providers: List<AbstractKTProviderInstance<*, *>>) {
+        val defaults = buildI18nEntries(providers)
+        if (defaults.isEmpty()) return
+
+        val dir = Path.of(System.getProperty("user.dir"), "apis", "i18n")
+        Files.createDirectories(dir)
+
+        langs.distinct().forEach { lang ->
+            val target = dir.resolve("$lang.json")
+            val existing = if (target.exists()) parseTopLevelJsonEntries(target.readText()) else emptyMap()
+            val merged = defaults.toMutableMap()
+            existing.forEach { (key, value) ->
+                val generated = defaults[key]
+                merged[key] = if (value.rawJson == null && value.description == null && generated?.description != null) {
+                    value.copy(description = generated.description)
+                } else {
+                    value
+                }
+            }
+            target.writeText(toJsonObject(merged.toSortedMap(), defaultLanguage = "en"))
+        }
+    }
+
+    private fun defaultDisplayName(name: String): String =
+        name.split('_', '-', '.')
+            .filter { it.isNotBlank() }
+            .joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }
+
+    private fun ApiSchemaFunction.toJson() = buildString {
+        appendLine("    {")
+        appendLine("      \"kind\": \"function\",")
+        appendLine("      \"namespace\": ${jsonString(namespace)},")
+        appendLine("      \"name\": ${jsonString(name)},")
+        appendLine("      \"luaName\": ${jsonString(luaName)},")
+        appendLine("      \"i18nKey\": ${jsonString(i18nKey)},")
+        appendLine("      \"params\": ${params.toJson()},")
+        appendLine("      \"returns\": ${jsonString(returns)},")
+        append("      \"description\": ${jsonNullableString(description)}")
+        append("\n    }")
+    }
+
+    private fun ApiSchemaMethod.toJson() = buildString {
+        appendLine("    {")
+        appendLine("      \"kind\": \"method\",")
+        appendLine("      \"ownerType\": ${jsonString(ownerType)},")
+        appendLine("      \"name\": ${jsonString(name)},")
+        appendLine("      \"i18nKey\": ${jsonString(i18nKey)},")
+        appendLine("      \"params\": ${params.toJson()},")
+        appendLine("      \"returns\": ${jsonString(returns)},")
+        append("      \"description\": ${jsonNullableString(description)}")
+        append("\n    }")
+    }
+
+    private fun List<ApiSchemaParam>.toJson(): String =
+        joinToString(prefix = "[", postfix = "]") { param ->
+            "{\"name\": ${jsonString(param.name)}, \"type\": ${jsonString(param.type)}}"
+        }
+
+    private fun jsonNullableString(value: String?): String =
+        value?.let { jsonString(it) } ?: "null"
+
+    private fun jsonStringArray(values: List<String>): String =
+        values.joinToString(prefix = "[", postfix = "]") { jsonString(it) }
+
+    private fun jsonString(value: String): String =
+        buildString {
+            append('"')
+            value.forEach { ch ->
+                when (ch) {
+                    '\\' -> append("\\\\")
+                    '"' -> append("\\\"")
+                    '\b' -> append("\\b")
+                    '\u000C' -> append("\\f")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> {
+                        if (ch.code < 0x20) append("\\u%04x".format(ch.code))
+                        else append(ch)
+                    }
+                }
+            }
+            append('"')
+        }
+
+    private fun parseTopLevelJsonEntries(json: String): Map<String, ApiI18nEntry> {
+        val result = linkedMapOf<String, ApiI18nEntry>()
+        var index = json.indexOf('{') + 1
+        while (index > 0 && index < json.length) {
+            index = json.skipWhitespace(index)
+            if (index >= json.length || json[index] == '}') break
+            if (json[index] != '"') break
+            val keyEnd = json.scanJsonStringEnd(index)
+            val key = unescapeJsonString(json.substring(index + 1, keyEnd))
+            index = json.skipWhitespace(keyEnd + 1)
+            if (index >= json.length || json[index] != ':') break
+            index = json.skipWhitespace(index + 1)
+            val valueStart = index
+            index = json.scanJsonValueEnd(index)
+            val rawValue = json.substring(valueStart, index).trim()
+            if (!key.startsWith("__")) result[key] = if (rawValue.startsWith("\"") && rawValue.endsWith("\"")) {
+                ApiI18nEntry(unescapeJsonString(rawValue.substring(1, rawValue.length - 1)).trimWrappedQuotes())
+            } else {
+                ApiI18nEntry(displayName = "", rawJson = rawValue)
+            }
+            index = json.skipWhitespace(index)
+            if (index < json.length && json[index] == ',') index += 1
+        }
+        return result
+    }
+
+    private fun unescapeJsonString(value: String): String =
+        value
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+
+    private fun String.trimWrappedQuotes(): String =
+        if (length >= 2 && startsWith("\"") && endsWith("\"")) substring(1, length - 1) else this
+
+    private fun toJsonObject(values: Map<String, ApiI18nEntry>, defaultLanguage: String): String = buildString {
+        appendLine("{")
+        append("  ${jsonString("__defaultLanguage")}: ${jsonString(defaultLanguage)}")
+        if (values.isNotEmpty()) append(',')
+        appendLine()
+        values.entries.forEachIndexed { index, (key, value) ->
+            append("  ${jsonString(key)}: ${i18nEntryJson(value)}")
+            if (index != values.size - 1) append(',')
+            appendLine()
+        }
+        appendLine("}")
+    }
+
+    private fun i18nEntryJson(entry: ApiI18nEntry): String =
+        entry.rawJson ?: entry.description?.let { desc ->
+            "{ \"displayName\": ${jsonString(entry.displayName)}, \"description\": ${jsonString(desc)} }"
+        } ?: jsonString(entry.displayName)
+
+    private fun String.skipWhitespace(start: Int): Int {
+        var index = start
+        while (index < length && this[index].isWhitespace()) index += 1
+        return index
+    }
+
+    private fun String.scanJsonStringEnd(start: Int): Int {
+        var index = start + 1
+        var escaped = false
+        while (index < length) {
+            val ch = this[index]
+            if (escaped) escaped = false
+            else if (ch == '\\') escaped = true
+            else if (ch == '"') return index
+            index += 1
+        }
+        return length - 1
+    }
+
+    private fun String.scanJsonValueEnd(start: Int): Int {
+        if (start >= length) return start
+        if (this[start] == '"') return scanJsonStringEnd(start) + 1
+        if (this[start] == '{') {
+            var depth = 0
+            var index = start
+            var inString = false
+            var escaped = false
+            while (index < length) {
+                val ch = this[index]
+                if (inString) {
+                    if (escaped) escaped = false
+                    else if (ch == '\\') escaped = true
+                    else if (ch == '"') inString = false
+                } else {
+                    if (ch == '"') inString = true
+                    else if (ch == '{') depth += 1
+                    else if (ch == '}') {
+                        depth -= 1
+                        if (depth == 0) return index + 1
+                    }
+                }
+                index += 1
+            }
+            return length
+        }
+        var index = start
+        while (index < length && this[index] != ',' && this[index] != '}') index += 1
+        return index
+    }
+
 }

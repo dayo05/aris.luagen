@@ -1,12 +1,19 @@
 # Build recipe consumed by https://github.com/dayo05/kei after each push.
-# Plain Kotlin/JVM library: build the jars, then publish to the kei Maven
-# repo so other projects (aris-mc, aris-db, aris-geckolib) can pull
-# me.ddayo:aris.luagen and me.ddayo:ap as SNAPSHOT deps.
+# Plain Kotlin/JVM library: build the jars, publish to the kei Maven repo,
+# and publish the editor API setup archive for aris block writer.
 
 [[steps]]
 name = "build"
 command = "./gradlew"
 args = ["build"]
+
+[[steps]]
+name = "package-api-setup"
+command = "bash"
+args = [
+  "-c",
+  "ARCHIVER=\"$(command -v 7z || command -v 7za || command -v 7zr)\" && rm -rf build/api-setup build/aris-luagen-api-setup.7z build/aris-luagen-api-setup.7z.sha256 && mkdir -p build/api-setup/apis && cp -R build/generated/ksp/main/resources/apis/. build/api-setup/apis/ && cp -R apis/i18n build/api-setup/apis/ && (cd build/api-setup && \"$ARCHIVER\" a -t7z ../aris-luagen-api-setup.7z apis) && if command -v sha256sum >/dev/null 2>&1; then sha256sum build/aris-luagen-api-setup.7z; else shasum -a 256 build/aris-luagen-api-setup.7z; fi | awk '{print $1}' > build/aris-luagen-api-setup.7z.sha256",
+]
 
 [[steps]]
 name = "publish-maven"
@@ -28,5 +35,13 @@ pattern = "ap/build/libs/*.jar"
 suffix = ""
 
 [[artifacts]]
-pattern = "docs/README.md"
+pattern = "build/aris-luagen-api-setup.7z"
+suffix = ""
+
+[[artifacts]]
+pattern = "build/aris-luagen-api-setup.7z.sha256"
+suffix = ""
+
+[[artifacts]]
+pattern = "READMe.md"
 suffix = ""

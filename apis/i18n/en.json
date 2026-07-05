@@ -1,0 +1,39 @@
+{
+  "__defaultLanguage": "en",
+  "me.ddayo.aris.luagen.CoroutineProvider.CoroutineReturn": {
+    "displayName": "Coroutine Return",
+    "description": "Internal use only. Result object yielded by an Aris coroutine step. It can represent either a wait condition or a break value returned to Aris."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.CoroutineReturn:finished()": {
+    "displayName": "Finished",
+    "description": "Internal use only. Returns true when this coroutine wait step has completed and execution can continue."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.CoroutineReturn:is_break()": {
+    "displayName": "Is Break",
+    "description": "Internal use only. Returns true when this coroutine result should stop the coroutine and return its value to Aris."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.CoroutineReturn:value()": {
+    "displayName": "Value",
+    "description": "Internal use only. Returns the value carried by a coroutine break result."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.LuaCoroutineIntegration": {
+    "displayName": "Aris Coroutine",
+    "description": "Internal use only. Aris-facing wrapper around a Kotlin coroutine sequence used by generated bindings."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.LuaCoroutineIntegration:next_iter()": {
+    "displayName": "Next Iteration",
+    "description": "Internal use only. Advances the coroutine sequence and returns the next coroutine result. If the sequence is finished, it returns a break result."
+  },
+  "me.ddayo.aris.luagen.LuaEngine.LuaCodeTask": {
+    "displayName": "Aris Code Task",
+    "description": "Task created from Aris source code and executed by the Aris engine scheduler."
+  },
+  "me.ddayo.aris.luagen.LuaEngine.LuaTask": {
+    "displayName": "Aris Task",
+    "description": "Base scheduled Aris task managed by the Aris engine."
+  },
+  "me.ddayo.aris.luagen.LuaEngine.LuaTask:get_task_name()": {
+    "displayName": "Get Task Name",
+    "description": "Returns the name assigned to this Aris task."
+  }
+}

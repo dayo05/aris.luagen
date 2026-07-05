@@ -28,6 +28,12 @@ dependencies {
     testRuntimeOnly("party.iroiro.luajava:luajit-platform:4.0.2:natives-desktop")
 }
 
+ksp {
+    arg("export_api_schema", "true")
+    arg("api_display_lang", "en|kr")
+    arg("api_contexts.LuaGenerated", "base")
+}
+
 tasks.test {
     useJUnitPlatform()
 }

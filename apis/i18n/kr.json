@@ -1,0 +1,39 @@
+{
+  "__defaultLanguage": "en",
+  "me.ddayo.aris.luagen.CoroutineProvider.CoroutineReturn": {
+    "displayName": "코루틴 반환값",
+    "description": "내부 전용입니다. Aris 코루틴 단계에서 yield되는 결과 객체입니다. 대기 조건 또는 Aris로 반환할 중단 값을 나타냅니다."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.CoroutineReturn:finished()": {
+    "displayName": "완료 여부",
+    "description": "내부 전용입니다. 이 코루틴 대기 단계가 완료되어 실행을 계속할 수 있으면 true를 반환합니다."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.CoroutineReturn:is_break()": {
+    "displayName": "중단 여부",
+    "description": "내부 전용입니다. 이 코루틴 결과가 코루틴을 중단하고 값을 Aris로 반환해야 하면 true를 반환합니다."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.CoroutineReturn:value()": {
+    "displayName": "값",
+    "description": "내부 전용입니다. 코루틴 중단 결과에 담긴 값을 반환합니다."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.LuaCoroutineIntegration": {
+    "displayName": "Aris 코루틴",
+    "description": "내부 전용입니다. 생성된 바인딩에서 사용하는 Kotlin 코루틴 시퀀스의 Aris 노출 래퍼입니다."
+  },
+  "me.ddayo.aris.luagen.CoroutineProvider.LuaCoroutineIntegration:next_iter()": {
+    "displayName": "다음 반복",
+    "description": "내부 전용입니다. 코루틴 시퀀스를 진행하고 다음 코루틴 결과를 반환합니다. 시퀀스가 끝나면 중단 결과를 반환합니다."
+  },
+  "me.ddayo.aris.luagen.LuaEngine.LuaCodeTask": {
+    "displayName": "Aris 코드 작업",
+    "description": "Aris 소스 코드로 생성되어 Aris 엔진 스케줄러가 실행하는 작업입니다."
+  },
+  "me.ddayo.aris.luagen.LuaEngine.LuaTask": {
+    "displayName": "Aris 작업",
+    "description": "Aris 엔진이 관리하는 예약된 Aris 작업의 기본 타입입니다."
+  },
+  "me.ddayo.aris.luagen.LuaEngine.LuaTask:get_task_name()": {
+    "displayName": "작업 이름 가져오기",
+    "description": "이 Aris 작업에 지정된 이름을 반환합니다."
+  }
+}

@@ -73,12 +73,24 @@ ksp {
     arg("package_name", "me.example.generated")
     arg("export_lua", "true")
     arg("export_doc", "true")
+    arg("export_api_schema", "true")
+    arg("api_display_lang", "en|kr")
+    arg("api_contexts.GameBindings", "ingame")
+    arg("api_contexts_required", "true")
 }
 ```
 
 - `package_name`: package for generated Kotlin bindings. The default is `me.ddayo.aris.gen`.
 - `export_lua`: writes generated Lua dispatcher code to a `.lua` file when set to `true`.
 - `export_doc`: writes generated Markdown API signatures to a `.md` file when set to `true`.
+- `export_api_schema`: writes a machine-readable JSON API schema for Aris Block Writer when set to `true`.
+- `api_display_lang`: creates editable display-name files under `apis/i18n`, for example `apis/i18n/en.json`. Multiple languages may be separated with `,` or `|`.
+- `api_contexts.<ProviderClassName>`: assigns direct API engine contexts to one generated provider group. Multiple contexts may be separated with `,` or `|`.
+- `api_contexts_required`: when `true`, schema export fails if a generated provider group has no `api_contexts.<ProviderClassName>` entry.
+
+When `export_api_schema` is enabled, one JSON file is emitted per generated provider group under KSP resources. For example, all classes and objects using `@LuaProvider(className = "GameBindings")` are collected into `build/generated/ksp/{sourceSet}/resources/apis/GameBindings.json`.
+All callables collected by the same `@LuaProvider` group share the provider file's top-level `contexts` value; per-function context inheritance is not expanded into the schema. Aris Block Writer resolves context inheritance from its IDE configuration.
+Generated i18n files include `__defaultLanguage: "en"` so editors can resolve missing translated keys through English fallback values. Callable KDoc/Javadoc text is used as the default generated description. When an existing i18n value is a string, the generator may enrich it into an object with the same display name plus the generated description; existing object values are preserved as manual edits.
 
 ## Core Concepts
 
