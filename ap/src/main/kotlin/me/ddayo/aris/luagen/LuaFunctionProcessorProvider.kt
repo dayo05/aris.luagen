@@ -170,8 +170,10 @@ end
         isPrivate: Boolean
     ) : AbstractBindTarget(luaTargetName, declaredClass, isPrivate) {
         override val returnResolved = funcCall.returnType?.resolve()?.starProjection()
+        private val callbacksByParamName = funcCall.luaFunctionCallbackAnnotationsByParam()
         override val apiParams = funcCall.parameters.mapIndexedNotNull { index, param ->
-            param.toApiSchemaParam(index)
+            val parameterCallbacks = param.luaCallbackAnnotations()
+            param.toApiSchemaParam(index, parameterCallbacks.ifEmpty { callbacksByParamName[param.name?.asString()] }.orEmpty())
         }
         override val apiReturnType = returnResolved.schemaTypeName()
         override val apiDescription = funcCall.docString?.trim()?.takeIf { it.isNotBlank() }
@@ -493,7 +495,16 @@ end
         val extends: Set<String> = emptySet()
     )
 
-    private data class ApiSchemaParam(val name: String, val type: String)
+    private data class ApiSchemaCallback(
+        val params: List<ApiSchemaParam>,
+        val returns: String
+    )
+
+    private data class ApiSchemaParam(
+        val name: String,
+        val type: String,
+        val callbacks: List<ApiSchemaCallback> = emptyList()
+    )
 
     private data class ApiSchemaFunction(
         val namespace: String,
@@ -628,6 +639,8 @@ end
         internal lateinit var logger: KSPLogger private set
 
         private val primitiveSchemaTypes = setOf("nil", "string", "number", "boolean", "function", "any")
+        private val luaCallbackAnnotationName = LuaCallback::class.java.canonicalName
+        private val luaCallbackParamAnnotationName = LuaCallbackParam::class.java.canonicalName
 
         private fun KSType?.schemaTypeName(): String {
             val type = this ?: return "nil"
@@ -648,14 +661,68 @@ end
             }
         }
 
-        private fun KSValueParameter.toApiSchemaParam(index: Int): ApiSchemaParam? {
+        private fun KSFunctionDeclaration.luaFunctionCallbackAnnotationsByParam(): Map<String, List<ApiSchemaCallback>> {
+            val callbacks = annotations
+                .firstOrNull { it.shortName.asString() == "LuaFunction" || it.annotationType.resolve().declaration.qualifiedName?.asString() == luaFunctionAnnotationName }
+                ?.arguments
+                ?.firstOrNull { it.name?.asString() == "callbacks" }
+                ?.value as? List<*>
+                ?: return emptyMap()
+            return callbacks
+                .mapNotNull { it as? KSAnnotation }
+                .mapNotNull { callback ->
+                    val param = callback.argumentValue<String>("param")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    param to callback.toApiSchemaCallback()
+                }
+                .groupBy({ it.first }, { it.second })
+        }
+
+        private fun KSValueParameter.luaCallbackAnnotations(): List<ApiSchemaCallback> =
+            annotations
+                .filter { it.shortName.asString() == "LuaCallback" || it.annotationType.resolve().declaration.qualifiedName?.asString() == luaCallbackAnnotationName }
+                .map { it.toApiSchemaCallback() }
+                .toList()
+
+        private fun KSAnnotation.toApiSchemaCallback(): ApiSchemaCallback {
+            val params = (argumentValue<List<*>>("params") ?: emptyList<Any?>())
+                .mapNotNull { it as? KSAnnotation }
+                .mapNotNull { it.toApiSchemaParam() }
+            val returns = argumentValue<String>("returns")?.takeIf { it.isNotBlank() } ?: "nil"
+            return ApiSchemaCallback(params, returns)
+        }
+
+        private fun KSAnnotation.toApiSchemaParam(): ApiSchemaParam? {
+            if (annotationType.resolve().declaration.qualifiedName?.asString() != luaCallbackParamAnnotationName &&
+                shortName.asString() != "LuaCallbackParam"
+            ) return null
+            val name = argumentValue<String>("name")?.takeIf { it.isNotBlank() } ?: return null
+            return ApiSchemaParam(name, callbackParamSchemaTypeName())
+        }
+
+        private fun KSAnnotation.callbackParamSchemaTypeName(): String {
+            argumentValue<String>("typeName")?.takeIf { it.isNotBlank() }?.let { return it }
+            val luaType = when (val value = arguments.firstOrNull { it.name?.asString() == "luaType" }?.value) {
+                is KSName -> value.getShortName()
+                is KSClassDeclaration -> value.simpleName.asString()
+                else -> value?.toString()
+            }
+            if (luaType != null && luaType != "CUSTOM") return luaType.lowercase()
+            val type = argumentValue<KSType>("type") ?: return "any"
+            return type.schemaTypeName()
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun <T> KSAnnotation.argumentValue(name: String): T? =
+            arguments.firstOrNull { it.name?.asString() == name }?.value as? T
+
+        private fun KSValueParameter.toApiSchemaParam(index: Int, callbacks: List<ApiSchemaCallback> = emptyList()): ApiSchemaParam? {
             val resolved = type.resolve()
             val docTypes = mutableListOf<String>()
             val processor = ArgumentManager.argFilters.first { it.isValid(resolved, this) }
             processor.resolveDocSignature(this, resolved.declaration as KSClassDeclaration, docTypes)
             val docType = docTypes.singleOrNull()?.takeIf { it.isNotBlank() } ?: docTypes.joinToString(", ").takeIf { it.isNotBlank() } ?: return null
             val schemaType = if (docType in primitiveSchemaTypes) docType else resolved.schemaTypeName()
-            return ApiSchemaParam(name?.asString() ?: "arg${index + 1}", schemaType)
+            return ApiSchemaParam(name?.asString() ?: "arg${index + 1}", schemaType, callbacks)
         }
     }
 
@@ -890,8 +957,15 @@ object $clName {"""
         }
 
         fun registerReturnAndParams(returnType: String, params: List<ApiSchemaParam>) {
+            fun registerParam(param: ApiSchemaParam) {
+                registerType(param.type)
+                param.callbacks.forEach { callback ->
+                    registerType(callback.returns)
+                    callback.params.forEach(::registerParam)
+                }
+            }
             registerType(returnType)
-            params.forEach { registerType(it.type) }
+            params.forEach(::registerParam)
         }
 
         providers.forEach { provider ->
@@ -1058,8 +1132,15 @@ object $clName {"""
         fun register(type: String) {
             if (type !in primitiveSchemaTypes) entries.putIfAbsent(type, ApiI18nEntry(type.substringAfterLast('.')))
         }
+        fun registerParam(param: ApiSchemaParam) {
+            register(param.type)
+            param.callbacks.forEach { callback ->
+                register(callback.returns)
+                callback.params.forEach(::registerParam)
+            }
+        }
         register(returnType)
-        params.forEach { register(it.type) }
+        params.forEach(::registerParam)
     }
 
     private fun writeDefaultI18nFiles(langs: List<String>, providers: List<AbstractKTProviderInstance<*, *>>) {
@@ -1116,9 +1197,21 @@ object $clName {"""
     }
 
     private fun List<ApiSchemaParam>.toJson(): String =
-        joinToString(prefix = "[", postfix = "]") { param ->
-            "{\"name\": ${jsonString(param.name)}, \"type\": ${jsonString(param.type)}}"
+        joinToString(prefix = "[", postfix = "]") { it.toJson() }
+
+    private fun ApiSchemaParam.toJson(): String =
+        buildString {
+            append("{\"name\": ${jsonString(name)}, \"type\": ${jsonString(type)}")
+            callbacks.firstOrNull()?.let { append(", \"callback\": ${it.toJson()}") }
+            if (callbacks.isNotEmpty()) append(", \"callbacks\": ${callbacks.toCallbacksJson()}")
+            append("}")
         }
+
+    private fun List<ApiSchemaCallback>.toCallbacksJson(): String =
+        joinToString(prefix = "[", postfix = "]") { it.toJson() }
+
+    private fun ApiSchemaCallback.toJson(): String =
+        "{\"params\": ${params.toJson()}, \"returns\": ${jsonString(returns)}}"
 
     private fun jsonNullableString(value: String?): String =
         value?.let { jsonString(it) } ?: "null"
