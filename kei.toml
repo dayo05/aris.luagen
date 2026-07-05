@@ -12,7 +12,7 @@ name = "package-api-setup"
 command = "bash"
 args = [
   "-c",
-  "ARCHIVER=\"$(command -v 7z || command -v 7za || command -v 7zr)\" && rm -rf build/api-setup build/aris-luagen-api-setup.7z build/aris-luagen-api-setup.7z.sha256 && mkdir -p build/api-setup/apis && cp -R build/generated/ksp/main/resources/apis/. build/api-setup/apis/ && cp -R apis/i18n build/api-setup/apis/ && (cd build/api-setup && \"$ARCHIVER\" a -t7z ../aris-luagen-api-setup.7z apis) && if command -v sha256sum >/dev/null 2>&1; then sha256sum build/aris-luagen-api-setup.7z; else shasum -a 256 build/aris-luagen-api-setup.7z; fi | awk '{print $1}' > build/aris-luagen-api-setup.7z.sha256",
+  "set -e; ARCHIVER=\"$(command -v 7z || command -v 7za || command -v 7zr || true)\"; test -n \"$ARCHIVER\" || { echo '7z, 7za, or 7zr is required' >&2; exit 1; }; rm -rf build/api-setup build/aris-luagen-api-setup.7z build/aris-luagen-api-setup.7z.sha256; mkdir -p build/api-setup/apis; found_api=false; for file in build/generated/ksp/main/resources/apis/*.json; do test -f \"$file\" || continue; cp \"$file\" build/api-setup/apis/; found_api=true; done; test \"$found_api\" = true || { echo 'No generated API schema found under build/generated/ksp/main/resources/apis' >&2; exit 1; }; cp -R apis/i18n build/api-setup/apis/; (cd build/api-setup && \"$ARCHIVER\" a -t7z ../aris-luagen-api-setup.7z apis); if command -v sha256sum >/dev/null 2>&1; then CHECKSUM=\"$(sha256sum build/aris-luagen-api-setup.7z)\"; else CHECKSUM=\"$(shasum -a 256 build/aris-luagen-api-setup.7z)\"; fi; printf '%s\\n' \"${CHECKSUM%% *}\" > build/aris-luagen-api-setup.7z.sha256",
 ]
 
 [[steps]]
